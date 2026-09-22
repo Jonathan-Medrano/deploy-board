@@ -92,6 +92,16 @@ npm run report -- --iteracion "Fidel\2026\2026 Septiembre 2" --sprint Sprint_202
 
 Opciones: `--destino stage` (el ambiente al que se promueve; default `stage`) · `--json`.
 
+## Mientras mide, el tablero no contesta
+
+Las consultas a las bases salen por `sqlcmd` de forma **síncrona**, así que durante una
+medición el proceso entero queda bloqueado: no responde `/api/ping`, ni sirve la página, ni
+atiende a otra pestaña. Dura lo que dure la medición — del orden de minutos.
+
+No es un cuelgue: cuando termina, contesta todo lo que quedó encolado. Pero si abrís el
+tablero en otra ventana mientras mide, va a parecer caído. Está así a propósito por ahora:
+es una herramienta local de una persona, y una medición asíncrona agrega concurrencia real
+a cambio de poco.
 ## Las marcas de main: lo único que no se mide
 
 `main` **no se sondea nunca**. Su estado no sale de una consulta: sale de que una persona
