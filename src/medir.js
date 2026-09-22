@@ -1,7 +1,6 @@
-import path from 'node:path';
 import { crearClienteAdo } from './ado/client.js';
 import { descubrirAdjuntos } from './fuentes/adjuntos.js';
-import { descubrirRepo } from './fuentes/repo.js';
+import { descubrirRepoEnAdo, REPO_POR_DEFECTO, RAMA_POR_DEFECTO } from './fuentes/repoAdo.js';
 import { reconciliar } from './reconciliador/index.js';
 import { medirAmbiente } from './db/ejecutar.js';
 import { validarEscalera } from './desvios/escalera.js';
@@ -9,6 +8,16 @@ import { construirReporte } from './reporte.js';
 import { rolesDesde } from './roles.js';
 
 export const OPCIONES_POR_DEFECTO = { ambientes: ['dev', 'stage'], destino: 'stage' };
+
+// De donde sale el lado REPO de la comparacion. Se lee de Azure, no del disco: obligar a
+// tener el Api.Net clonado y al dia era la unica dependencia que quedaba para instalar esto
+// en la maquina de cualquiera.
+export function opcionesDelRepo(env = process.env) {
+  return {
+    repo: env.DEPLOY_BOARD_REPO_SCRIPTS || REPO_POR_DEFECTO,
+    rama: env.DEPLOY_BOARD_RAMA_SCRIPTS || RAMA_POR_DEFECTO,
+  };
+}
 
 // Una sola barrida, dos consumidores: la consola y el servidor local. Antes esto vivia dentro
 // de main() en cli.js, y un servidor que quisiera re-medir tenia que volver a escribirla —
@@ -24,8 +33,26 @@ export async function medirTodo(opciones = {}, deps = {}) {
 
   const { scripts: adjuntos, wis, tasks } = await descubrirAdjuntos(ado, o.iteracion);
 
-  const dirMig = path.join(env.API_NET_DIR || '../Api.Net', 'Api', 'DB_Migrations');
-  const repo = o.sprint ? descubrirRepo(dirMig, o.sprint) : [];
+  // El lado del REPO es opcional, pero su ausencia no puede pasar callada: sin el, los
+  // desvios de "esta en la tarjeta y no en el repo" (y al reves) no pueden dispararse, y una
+  // lista sin esos desvios se lee como "todo coincide" cuando en realidad no se comparo nada.
+  const delRepo = opcionesDelRepo(env);
+  const descubrir = deps.descubrirRepo || descubrirRepoEnAdo;
+  let repo = [];
+  if (!o.sprint) {
+    avisos.push('No se comparo contra el repo: falta DEPLOY_BOARD_SPRINT (la carpeta del sprint dentro de DB_Migrations). Los desvios de script faltante o sobrante NO se pueden detectar.');
+  } else {
+    try {
+      repo = await descubrir(ado, { sprint: o.sprint, ...delRepo });
+      if (!repo.length) {
+        avisos.push(`No encontre scripts en ${delRepo.repo}, rama ${delRepo.rama}, carpeta del sprint "${o.sprint}". Revisa DEPLOY_BOARD_SPRINT y DEPLOY_BOARD_RAMA_SCRIPTS: los desvios de script faltante o sobrante NO se pueden detectar sin eso.`);
+      }
+    } catch (e) {
+      // Que falle el lado del repo no puede tumbar la medicion de los ambientes, que es lo
+      // que decide si se sube o no. Pero tampoco puede pasar callado.
+      avisos.push(`No pude leer ${delRepo.repo} de Azure (${e.message}). Los desvios de script faltante o sobrante NO se pueden detectar en esta corrida.`);
+    }
+  }
 
   const scripts = reconciliar({ adjuntos, repo });
 

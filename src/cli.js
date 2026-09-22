@@ -7,8 +7,20 @@ const RAIZ = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 cargarEnv([path.join(RAIZ, '.env'), path.join(RAIZ, '..', 'taskrunner', '.env')]);
 import { formatearReporte } from './reporte.js';
 
-function args(argv) {
-  const o = { ambientes: ['dev', 'stage'], destino: 'stage', json: false };
+// Los flags pisan al .env, no al reves: asi se mide otro sprint sin editar el archivo, que
+// es como se termina dejando una configuracion de prueba puesta sin darse cuenta.
+export function opcionesPorDefecto(env = process.env) {
+  return {
+    iteracion: env.DEPLOY_BOARD_ITERACION || undefined,
+    sprint: env.DEPLOY_BOARD_SPRINT || undefined,
+    ambientes: (env.DEPLOY_BOARD_AMBIENTES || 'dev,stage').split(',').map((x) => x.trim()).filter(Boolean),
+    destino: env.DEPLOY_BOARD_DESTINO || 'stage',
+    json: false,
+  };
+}
+
+export function args(argv, env = process.env) {
+  const o = opcionesPorDefecto(env);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--iteracion') o.iteracion = argv[++i];

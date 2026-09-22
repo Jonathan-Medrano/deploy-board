@@ -8,6 +8,7 @@ import { construirVista } from './vista.js';
 import { crearAlmacen } from './almacen.js';
 import { aplicarCambio } from './marcas.js';
 import { estadoDelRepo, traerCambios } from './actualizador.js';
+import { sprintsDisponibles } from './sprints-ado.js';
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
 export const RAIZ = path.join(AQUI, '..');
@@ -52,6 +53,7 @@ export function quienSoy(deps = {}) {
 
 export function crearManejador({
   almacen, medir, opciones, quien = null,
+  listarSprints = async () => ({ iteraciones: [], carpetas: [] }),
   hoy = () => new Date().toISOString().slice(0, 10),
   leerEstatico,
   actualizador = { estado: estadoDelRepo, traer: traerCambios },
@@ -78,9 +80,23 @@ export function crearManejador({
       return json(200, { vista, marcas: almacen.leerMarcas(), nuncaSeMidio: vista == null });
     }
 
-    if (ruta === '/api/medir' && metodo === 'POST') {
+    if (ruta === '/api/sprints' && metodo === 'GET') {
       try {
-        const { vista, avisos } = await medir();
+        return json(200, await listarSprints());
+      } catch (e) {
+        return json(500, { error: e.message });
+      }
+    }
+
+    if (ruta === '/api/medir' && metodo === 'POST') {
+      // El sprint elegido viaja en el cuerpo. Sin cuerpo se usa el del .env, asi el boton de
+      // medir sigue andando igual cuando nadie eligio nada todavia.
+      let eleccion = {};
+      if (req.cuerpo) {
+        try { eleccion = JSON.parse(req.cuerpo) || {}; } catch { return json(400, { error: 'El cuerpo no es JSON valido.' }); }
+      }
+      try {
+        const { vista, avisos } = await medir(eleccion);
         // Se guarda DESPUES de que la medicion salio bien: una corrida que falla no puede
         // borrar la anterior, que es la unica foto que le queda al que esta por subir.
         almacen.guardarVista(vista);
@@ -142,8 +158,13 @@ async function leerCuerpo(req) {
 
 export function crearServidor({ opciones, env = process.env, raiz = RAIZ } = {}) {
   const almacen = crearAlmacen(env, raiz);
-  const medir = async () => {
-    const { reporte, avisos, opciones: usadas } = await medirTodo(opciones, { env });
+  const medir = async (eleccion = {}) => {
+    // Lo elegido en pantalla pisa al .env, pero solo lo que vino: un select vacio no puede
+    // borrar la configuracion de base.
+    const pedidas = { ...opciones };
+    if (eleccion.iteracion) pedidas.iteracion = eleccion.iteracion;
+    if (eleccion.sprint) pedidas.sprint = eleccion.sprint;
+    const { reporte, avisos, opciones: usadas } = await medirTodo(pedidas, { env });
     const vista = construirVista(reporte, {
       org: env.AZURE_ORG || env.AZURE_ORG_URL || null,
       proyecto: env.AZURE_PROJECT || null,
@@ -158,6 +179,7 @@ export function crearServidor({ opciones, env = process.env, raiz = RAIZ } = {})
   // de actualizar deja corriendo el codigo nuevo sin que nadie toque una consola.
   const manejar = crearManejador({
     almacen, medir, opciones, quien: quienSoy(),
+    listarSprints: () => sprintsDisponibles(env),
     alReiniciar: () => setTimeout(() => process.exit(10), 400),
   });
 

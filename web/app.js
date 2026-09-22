@@ -23,7 +23,7 @@
     },
   };
 
-  var D = null, CONFIG = null, ORG = null, COLSPAN = 10;
+  var D = null, CONFIG = null, ORG = null, COLSPAN = 10, SPRINTS = null;
   var SEV = { bloqueante:'b', alto:'a', medio:'m' };
 
   /* ---------------- semantica de cada ola ---------------- */
@@ -539,18 +539,131 @@
     });
   });
 
+  /* ---------------- selector de sprint ---------------- */
+  function iteracionSeleccionada(){
+    var sel = document.getElementById('selSprint');
+    if (!sel || !SPRINTS) return null;
+    return SPRINTS.iteraciones.find(function(i){ return i.ruta === sel.value; }) || null;
+  }
+
+  /* La carpeta derivada solo se acepta si existe de verdad en el repo. Si no, se cae a
+     "ninguna": ofrecer una carpeta que no esta creada todavia hace que /api/medir la pida
+     igual y reviente, o peor, que compare contra algo que no es lo que el usuario cree. */
+  function pintarSelectorCarpeta(){
+    var selC = document.getElementById('selCarpeta');
+    if (!selC || !SPRINTS) return;
+    selC.innerHTML = '<option value="">(ninguna — no comparar contra el repo)</option>' +
+      SPRINTS.carpetas.map(function(c){ return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
+    var it = iteracionSeleccionada();
+    var sugerida = it && it.carpeta;
+    selC.value = (sugerida && SPRINTS.carpetas.indexOf(sugerida) >= 0) ? sugerida : '';
+    pintarAvisoCarpeta();
+  }
+
+  /* Sin carpeta seleccionada no hay comparacion contra el repo, sea porque la derivada no
+     existe (nota automatica) o porque el usuario eligio "ninguna" a mano (nota generica).
+     Las dos son el mismo hecho: la lista que se va a ver no trae desvios de script faltante
+     o sobrante, y decirlo es obligatorio, no cosmetico. */
+  function pintarAvisoCarpeta(){
+    var el = document.getElementById('avisoCarpeta');
+    var selC = document.getElementById('selCarpeta');
+    if (!el || !selC || !SPRINTS) return;
+    if (SPRINTS.nota) { el.textContent = SPRINTS.nota; el.hidden = false; return; }
+    if (!selC.value) {
+      var it = iteracionSeleccionada();
+      var sugerida = it && it.carpeta;
+      el.textContent = (sugerida && SPRINTS.carpetas.indexOf(sugerida) < 0)
+        ? 'La carpeta ' + sugerida + ' no está en el repo: sin ella no se pueden detectar los desvíos de script faltante o sobrante.'
+        : 'Sin carpeta elegida no se compara contra el repo: no se van a detectar desvíos de script faltante o sobrante.';
+      el.hidden = false;
+      return;
+    }
+    el.hidden = true; el.textContent = '';
+  }
+
+  /* Cambiar el select no cambia lo que ya esta en pantalla — eso solo pasa cuando se vuelve a
+     medir. Sin este aviso alguien cambia el sprint, ve la tabla vieja quieta y cree que ya
+     esta mirando el nuevo. */
+  function pintarAvisoDesfasado(){
+    var el = document.getElementById('avisoDesfasado');
+    var selS = document.getElementById('selSprint');
+    if (!el || !selS) return;
+    if (!D || !SPRINTS) { el.hidden = true; return; }
+    var it = iteracionSeleccionada();
+    var selC = document.getElementById('selCarpeta');
+    var mismoSprint = !D.meta.iteracion || D.meta.iteracion === selS.value;
+    var mismaCarpeta = (D.meta.sprint || '') === (selC.value || '');
+    if (mismoSprint && mismaCarpeta) { el.hidden = true; el.textContent = ''; return; }
+    var mostrado = D.meta.sprint || D.meta.iteracion || 'un sprint sin identificar';
+    var elegido = (it && it.nombre) || selS.value || 'la selección actual';
+    el.textContent = 'Estás viendo la medición de ' + mostrado + '. Apretá "Volver a medir" para medir ' + elegido + '.';
+    el.hidden = false;
+  }
+
+  function pintarSelectorSprint(){
+    var selS = document.getElementById('selSprint');
+    if (!selS || !SPRINTS) return;
+    var porAnio = {}, orden = [];
+    SPRINTS.iteraciones.forEach(function(it){
+      var anio = (it.nombre || '').slice(0, 4);
+      if (!porAnio[anio]) { porAnio[anio] = []; orden.push(anio); }
+      porAnio[anio].push(it);
+    });
+    selS.innerHTML = orden.map(function(anio){
+      return '<optgroup label="' + esc(anio) + '">' + porAnio[anio].map(function(it){
+        return '<option value="' + esc(it.ruta) + '">' + esc(it.nombre) + '</option>';
+      }).join('') + '</optgroup>';
+    }).join('');
+    var elegida = SPRINTS.actual ? SPRINTS.actual.ruta : (SPRINTS.iteraciones[0] && SPRINTS.iteraciones[0].ruta);
+    if (elegida) selS.value = elegida;
+    pintarSelectorCarpeta();
+    pintarAvisoDesfasado();
+  }
+
+  function cargarSprints(){
+    return peticion('/api/sprints').then(function(datos){
+      SPRINTS = datos;
+      pintarSelectorSprint();
+    }).catch(function(err){
+      avisar('No se pudo cargar la lista de sprints: ' + err.message + '.');
+    });
+  }
+
+  var selSprint = document.getElementById('selSprint');
+  if (selSprint) selSprint.addEventListener('change', function(){
+    pintarSelectorCarpeta();
+    pintarAvisoDesfasado();
+  });
+  var selCarpeta = document.getElementById('selCarpeta');
+  if (selCarpeta) selCarpeta.addEventListener('change', function(){
+    pintarAvisoCarpeta();
+    pintarAvisoDesfasado();
+  });
+
   /* ---------------- medir de verdad ---------------- */
   function ejecutarMedicion(boton){
     var original = boton.textContent;
     boton.disabled = true;
     boton.textContent = 'Midiendo...';
     avisar('Midiendo: consultando Azure DevOps y las bases de dev y stage. Puede tardar decenas de segundos.');
-    peticion('/api/medir', { method:'POST' }).then(function(body){
+
+    // Sin seleccion (SPRINTS no cargo todavia, o los selects estan vacios) se manda un cuerpo
+    // vacio: el servidor lo trata igual que "sin cuerpo" y cae al .env, que es el
+    // comportamiento de siempre.
+    var cuerpo = {};
+    var elS = document.getElementById('selSprint'), elC = document.getElementById('selCarpeta');
+    if (elS && elS.value) cuerpo.iteracion = elS.value;
+    if (elC && elC.value) cuerpo.sprint = elC.value;
+
+    peticion('/api/medir', {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cuerpo),
+    }).then(function(body){
       D = body.vista;
       estado.marcas = (body.marcas && body.marcas.marcas) || {};
       estado.ignorados = (body.marcas && body.marcas.ignorados) || {};
       mostrarContenido();
       refrescarConD();
+      pintarAvisoDesfasado();
       avisar((body.avisos && body.avisos.length) ? body.avisos.join(' ') : '');
     }).catch(function(err){
       avisar('No se pudo medir: ' + err.message + '.');
@@ -634,6 +747,7 @@
       estado.ignorados = (vistaResp.marcas && vistaResp.marcas.ignorados) || {};
       mostrarContenido();
       refrescarConD();
+      pintarAvisoDesfasado();
     }).catch(function(err){
       avisar('No se pudo cargar la pantalla: ' + err.message + '.');
     });
@@ -641,4 +755,5 @@
 
   cargar();
   cargarActualizaciones();
+  cargarSprints();
 })();

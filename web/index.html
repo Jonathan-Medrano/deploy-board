@@ -197,7 +197,11 @@
   .toggle:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
   .rev h3 a.wilink-inline{color:var(--accent); text-decoration:none; border-bottom:1px solid transparent}
   .rev h3 a.wilink-inline:hover{border-bottom-color:currentColor}
-  #aviso{background:var(--warn-bg); border:1px solid color-mix(in srgb,var(--warn) 35%,transparent); border-radius:4px; padding:10px 14px; font-size:13px; color:var(--warn); margin:0}
+  #aviso, #avisoDesfasado{background:var(--warn-bg); border:1px solid color-mix(in srgb,var(--warn) 35%,transparent); border-radius:4px; padding:10px 14px; font-size:13px; color:var(--warn); margin:0}
+  .selector-sprint{display:flex; align-items:flex-end; gap:18px; flex-wrap:wrap; padding:14px 18px; background:var(--surface); border:1px solid var(--line); border-radius:4px}
+  .selector-sprint label{display:flex; flex-direction:column; gap:4px; font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint)}
+  .selector-sprint select{font:inherit; font-size:13px; padding:6px 9px; border-radius:3px; border:1px solid var(--line); background:var(--surface); color:var(--ink); min-width:230px; text-transform:none; letter-spacing:normal}
+  #avisoCarpeta{flex:1 1 260px; align-self:center; margin:0; font-size:12.5px; color:var(--warn)}
   #estados{display:flex; flex-direction:column; gap:7px}
   .franja{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
   .franja .lbl{font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); margin-right:2px; min-width:118px}
@@ -259,6 +263,18 @@
   </div>
 
   <div id="contenido" hidden>
+    <div class="selector-sprint" id="selectorSprint">
+      <label>Sprint
+        <select id="selSprint"></select>
+      </label>
+      <label>Carpeta del repo
+        <select id="selCarpeta"></select>
+      </label>
+      <p id="avisoCarpeta" hidden></p>
+    </div>
+
+    <p id="avisoDesfasado" hidden></p>
+
     <div class="olas" id="olas" role="group" aria-label="Ola de subida">
       <button class="ola" data-ola="stage" aria-pressed="true">
         <span class="cuando">Lunes o martes de la 2ª semana</span>

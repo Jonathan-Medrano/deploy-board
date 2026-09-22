@@ -169,3 +169,54 @@ test('un pull rechazado por trabajo local devuelve 409 y NO reinicia', async () 
   assert.match(JSON.parse(r.cuerpo).error, /fast-forward/);
   assert.equal(pidioReinicio, false);
 });
+
+test('el tablero puede pedir la lista de sprints para el selector', async () => {
+  const man = crearManejador({
+    almacen: almacenFalso(), medir: async () => ({}), opciones: opcionesBase,
+    listarSprints: async () => ({ iteraciones: [{ nombre: 'X', ruta: 'r', carpeta: 'Sprint_X' }], carpetas: ['Sprint_X'] }),
+  });
+  const b = JSON.parse((await man({ metodo: 'GET', ruta: '/api/sprints' })).cuerpo);
+  assert.equal(b.iteraciones[0].carpeta, 'Sprint_X');
+});
+
+test('si Azure no contesta la lista de sprints, se dice; no se devuelve una lista vacia', async () => {
+  const man = crearManejador({
+    almacen: almacenFalso(), medir: async () => ({}), opciones: opcionesBase,
+    listarSprints: async () => { throw new Error('401'); },
+  });
+  const r = await man({ metodo: 'GET', ruta: '/api/sprints' });
+  assert.equal(r.status, 500);
+  assert.match(JSON.parse(r.cuerpo).error, /401/);
+});
+
+test('el sprint elegido en pantalla llega a la medicion', async () => {
+  let recibido = null;
+  const man = crearManejador({
+    almacen: almacenFalso(), opciones: opcionesBase,
+    medir: async (e) => { recibido = e; return { vista: { meta: {} }, avisos: [] }; },
+  });
+  await man({ metodo: 'POST', ruta: '/api/medir', cuerpo: JSON.stringify({ iteracion: 'It', sprint: 'Sprint_Z' }) });
+  assert.deepEqual(recibido, { iteracion: 'It', sprint: 'Sprint_Z' });
+});
+
+test('medir sin elegir nada sigue funcionando con lo configurado', async () => {
+  let recibido = 'no llamado';
+  const man = crearManejador({
+    almacen: almacenFalso(), opciones: opcionesBase,
+    medir: async (e) => { recibido = e; return { vista: { meta: {} }, avisos: [] }; },
+  });
+  const r = await man({ metodo: 'POST', ruta: '/api/medir' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(recibido, {});
+});
+
+test('un cuerpo roto en medir da 400 y no dispara una medicion de veinte segundos', async () => {
+  let midio = false;
+  const man = crearManejador({
+    almacen: almacenFalso(), opciones: opcionesBase,
+    medir: async () => { midio = true; return { vista: {}, avisos: [] }; },
+  });
+  const r = await man({ metodo: 'POST', ruta: '/api/medir', cuerpo: '{roto' });
+  assert.equal(r.status, 400);
+  assert.equal(midio, false);
+});

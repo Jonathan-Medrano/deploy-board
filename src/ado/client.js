@@ -84,10 +84,66 @@ export function crearClienteAdo(env = process.env, deps = {}) {
     return out;
   }
 
+  // --- Git de ADO: leer DB_Migrations sin tener el repo clonado ---
+  // Antes esto salia de una carpeta en disco, lo que obligaba a cada dev a tener el Api.Net
+  // al lado Y actualizado. Medido el 2026-09-22: un clon local desactualizado reportaba que
+  // Sprint_2026_09_02 "no existia" cuando en la rama si estaba. Leer del origen no se
+  // desactualiza.
+  const git = (repo) => `${org}/${encodeURIComponent(project)}/_apis/git/repositories/${encodeURIComponent(repo)}`;
+
+  async function listarArchivos(repo, carpeta, rama) {
+    const url = `${git(repo)}/items?scopePath=${encodeURIComponent(carpeta)}` +
+      `&recursionLevel=Full&versionDescriptor.version=${encodeURIComponent(rama)}&${API}`;
+    return (((await (await api(url)).json()).value) || []).map((i) => ({ ruta: i.path, esCarpeta: !!i.isFolder }));
+  }
+
+  async function descargarArchivo(repo, ruta, rama) {
+    const url = `${git(repo)}/items?path=${encodeURIComponent(ruta)}` +
+      `&versionDescriptor.version=${encodeURIComponent(rama)}&$format=octetStream&${API}`;
+    return Buffer.from(await (await api(url)).arrayBuffer());
+  }
+
+  // Quien commiteo el archivo. Es el responsable a nombrar cuando el script esta en el repo
+  // y no esta adjunto en la tarjeta: es el que tiene que subirlo. Un fallo no es un error del
+  // barrido — devuelve null y el desvio sale sin nombre, nunca con uno inventado.
+  async function ultimoCommitDe(repo, ruta) {
+    try {
+      const url = `${git(repo)}/commits?searchCriteria.itemPath=${encodeURIComponent(ruta)}` +
+        `&searchCriteria.$top=1&${API}`;
+      const c = (((await (await api(url)).json()).value) || [])[0];
+      if (!c || !c.author) return null;
+      return { nombre: c.author.name || null, fecha: (c.author.date || '').slice(0, 10) || null };
+    } catch {
+      return null;
+    }
+  }
+
+  // Las hojas del arbol de iteraciones: los sprints de verdad, no los nodos de año.
+  async function listarIteraciones() {
+    const url = `${org}/${encodeURIComponent(project)}/_apis/wit/classificationnodes/iterations?$depth=10&${API}`;
+    const raiz = await (await api(url)).json();
+    const out = [];
+    (function recorrer(nodo) {
+      const hijos = nodo.children || [];
+      if (!hijos.length) {
+        if (nodo.name) out.push({
+          nombre: nodo.name,
+          ruta: nodo.path,
+          inicio: (nodo.attributes && nodo.attributes.startDate) || null,
+          fin: (nodo.attributes && nodo.attributes.finishDate) || null,
+        });
+      } else for (const h of hijos) recorrer(h);
+    })(raiz);
+    return out;
+  }
+
   async function listarEstados(tipo) {
     const url = `${org}/${encodeURIComponent(project)}/_apis/wit/workitemtypes/${encodeURIComponent(tipo)}/states?${API}`;
     return (((await (await api(url)).json()).value) || []).map((s) => s.name);
   }
 
-  return { wiql, getWorkItems, descargarAdjunto, quienSubioCadaAdjunto, setEstado, setCampos, listarEstados };
+  return {
+    wiql, getWorkItems, descargarAdjunto, quienSubioCadaAdjunto, setEstado, setCampos, listarEstados,
+    listarArchivos, descargarArchivo, ultimoCommitDe, listarIteraciones,
+  };
 }

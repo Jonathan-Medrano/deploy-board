@@ -20,6 +20,8 @@ nombre propio.
 - **No toca producción.** `produccion` no está en los catálogos conectables y `medirAmbiente`
   la rechaza antes de abrir nada.
 - **No escribe en ninguna base.** Solo `SELECT` sobre catálogo del sistema y filas testigo.
+- **No necesita ningún otro repositorio clonado.** Los `.sql` del sprint los lee de Azure, de
+  los dos lados: los adjuntos de los work items y la carpeta `Api/DB_Migrations` del `Api.Net`.
 - No valida reportes `.rdl`.
 
 ## Instalación (para el resto del equipo)
@@ -85,7 +87,7 @@ uno, como el task runner. Desde ahí:
 
 ```bash
 cd deploy-board
-npm run report -- --iteracion "Fidel\2026\2026 Septiembre 2" --sprint Sprint_2026_09_01 --ambientes dev,stage
+npm run report -- --iteracion "Fidel\2026\2026 Septiembre 2" --sprint Sprint_2026_09_02 --ambientes dev,stage
 ```
 
 Opciones: `--destino stage` (el ambiente al que se promueve; default `stage`) · `--json`.
@@ -108,13 +110,15 @@ resolver, así que **si el equipo lo va a usar en serio, esa variable hay que po
 
 ## Credenciales
 
-Tanto `npm start` (el tablero) como `npm run report` (la consola) cargan `../taskrunner/.env` y después `deploy-board/.env` (opcional, pisa al
-primero). De ahí salen `AZURE_PAT`, `AZURE_ORG_URL` y `AZURE_PROJECT`.
+Todo va en `deploy-board/.env`, que el instalador te deja copiado de `.env.example`. Son cinco
+valores que hay que pedirle al equipo: `AZURE_PAT`, y `SQL_SERVER` / `SQL_USER` / `SQL_PASSWORD`
+de las bases de dev y stage.
 
-Para SQL: si no hay `SQL_SERVER` / `SQL_USER` / `SQL_PASSWORD`, cae al `Web.config` de
-`Api.Net`. **Las variables ganan a propósito** — el `Web.config` viaja igual a todos los
-ambientes, así que su credencial no está acotada a `dev`. Lo correcto es un login de **solo
-lectura** propio; el día que exista, son dos variables.
+**No están en el repo a propósito** y no hay que commitearlas nunca: `.env` está en el
+`.gitignore`. Lo correcto a futuro es un login de **solo lectura** propio para estas consultas.
+
+Lo que esté puesto en el entorno de la terminal gana sobre el archivo, así se puede medir otro
+sprint sin editar nada — que es como se termina dejando una configuración de prueba puesta.
 
 `RESPONSABLE_PROMOCION` y `RESPONSABLE_PRODUCCION` son **roles, no autores**: quien ejecuta
 depende del ambiente, no de quién escribió el script. Sin configurar, el desvío sale **sin
@@ -124,32 +128,49 @@ nombre** — nunca con uno inventado.
 del sistema mientras dura cada consulta. Es inherente a usar `sqlcmd`, no un descuido: no
 aparece en ninguna salida ni log de la herramienta, pero conviene saberlo.
 
+## El sprint se elige en la pantalla
+
+Arriba de la tabla hay dos selectores: la **iteración** de Azure (el sprint) y la **carpeta**
+del repo contra la que se compara. Al elegir un sprint, su carpeta se selecciona sola — el
+nombre se deriva (`2026 Septiembre 2` → `Sprint_2026_09_02`), y la lista muestra sólo las que
+**existen de verdad** en el repo.
+
+Al abrir, viene elegido el sprint **en curso**: el que contiene la fecha de hoy. No el último
+creado — en Azure hay 208 iteraciones y las de los próximos meses ya están creadas.
+
+Si la carpeta derivada no existe en el repo, la pantalla lo dice. Sin ella no se pueden
+detectar los desvíos de *script faltante o sobrante*, y una lista sin esos desvíos se lee como
+«todo coincide» cuando en realidad no se comparó nada.
+
 ## Resultado de la corrida real (2026-09-22, sprint `2026 Septiembre 2`)
 
 | | |
 |---|---|
-| Scripts descubiertos | 27 |
-| Corrieron en **los dos** ambientes medidos | 4 |
+| Scripts descubiertos | 23 |
+| …de esos, presentes en **la tarjeta y el repo** | 4 |
+| …presentes **sólo como adjunto** | 19 |
+| Corrieron en **los dos** ambientes medidos | 3 |
 | **Corrieron en UNO SOLO** | **11** |
 | …de esos, en dirección **inversa** (stage sí, dev no) | 1 |
-| No corrieron en ninguno | 12 |
+| No corrieron en ninguno | 9 |
 | **Sin veredicto firme** | **0** |
-| Bloqueantes | 16 |
+| Bloqueantes | 14 |
 
-Desvíos: `D2` 11 · `D3` 6 · `D5` 4 · `D6` 23 · `D7` 9 · `D8` 1 · `D9` 1 · `D11` 15.
+Desvíos: `D2` 11 · `D3` 4 · `D6` 19 · `D7` 9 · `D8` 1 · `D9` 3 · `D11` 15.
 
-**El hallazgo más fuerte: la tarjeta y el repo están disjuntos.** 4 scripts existen solo en el
-repo y 23 solo como adjunto — **ninguno en los dos lados**. `Sprint_2026_09_02` no existe en
-`DB_Migrations`, así que los 23 que se van a subir no tienen commit, ni historia, ni autor, ni
-diff.
+**El hallazgo más fuerte: la mayoría de los scripts del sprint no están commiteados.** 19 de 23
+existen sólo como adjunto en la tarjeta: no tienen commit, ni historia, ni autor, ni diff.
+
+> ⚠️ **Corrección (2026-09-22, misma fecha).** La primera versión de esta sección decía que la
+> tarjeta y el repo estaban **completamente disjuntos** y que `Sprint_2026_09_02` no existía en
+> `DB_Migrations`. Las dos cosas eran falsas, y por la misma causa: la comparación leía una
+> **copia local desactualizada** del `Api.Net`. Leyendo de Azure, la carpeta existe y **4
+> scripts sí están en los dos lados**. El sistema ahora lee del origen, que no se desactualiza.
 
 ## Qué NO se verificó en esa corrida
 
 - **`sandbox` y `produccion` no se midieron.** La corrida fue con `--ambientes dev,stage`.
-- **La comparación contra el repo apuntó a `Sprint_2026_09_01`**, que es la carpeta del sprint
-  *anterior*, porque la de septiembre 2 no existe. Los `D5`/`D6` son correctos como hecho —
-  esos scripts no están commiteados en ningún lado— pero el conteo no es una comparación
-  carpeta-contra-tarjeta del mismo sprint.
+- **La corrida nueva no se miró en pantalla.** Los números salen del reporte por consola.
 - **No se reprodujo el número del 2026-09-18** ("8 de 9 en un solo ambiente"). El alcance es
   distinto a propósito: aquella medición miró los 9 adjuntos de la tarjeta `Scripts`; ésta
   barre los 27 `.sql` de todos los work items del sprint. Los dos números son consistentes en
@@ -157,7 +178,8 @@ diff.
   no se deben presentar como si lo fueran.**
 - **`D1` no disparó** en esta corrida: ninguna task contenedora quedó atrás de su work item
   en este sprint. La regla está cubierta por tests, no por esta corrida.
-- **`D10` no disparó**, porque requiere que un script exista en las dos fuentes y ninguno lo hace.
+- **`D5` y `D10` no dispararon.** No hay ningún script que esté en el repo y no en la tarjeta,
+  y ninguno de los 4 que están en los dos lados quedó numerado distinto.
 - La escalera avisó de un estado que no conoce (**`Paused`**) y no le inventó un rango: los WI
   en ese estado no disparan `D1` ni `D4`.
 
@@ -167,7 +189,7 @@ diff.
 cd deploy-board && npm test
 ```
 
-223 tests. **No tocan red ni base**: el cliente de ADO, `git` y `sqlcmd` entran por inyección.
+257 tests. **No tocan red ni base**: el cliente de ADO, `git` y `sqlcmd` entran por inyección.
 
 ⚠️ `node --test` sin argumentos también toma `test-*.{js,cjs,mjs}` de cualquier lugar del
 árbol. Un archivo suelto con ese nombre suma tests fantasma al conteo.
@@ -178,12 +200,14 @@ cd deploy-board && npm test
 src/parser/        nombre de archivo, encoding (UTF-16LE de SSMS), objetos del cuerpo SQL
 src/sondas/        derivar sondas, armar la consulta, veredicto por ambiente
 src/ado/           cliente de Azure DevOps
-src/fuentes/       descubrimiento: adjuntos de ADO y DB_Migrations del repo
+src/fuentes/       descubrimiento: los .sql de los adjuntos y los de DB_Migrations, los dos de Azure
 src/reconciliador/ une las dos fuentes conservando el desacuerdo
 src/desvios/       escalera de estados y las once reglas
 src/db/            ejecutor de sondas por sqlcmd
 src/reporte.js     modelo y formato del reporte
 src/medir.js       la barrida completa, que usan la consola y el tablero
+src/sprints.js     emparejar la iteracion de Azure con la carpeta del repo
+src/sprints-ado.js  las listas que llena el selector, y cual es el sprint en curso
 src/vista.js       proyección del reporte al modelo que consume la pantalla
 src/marcas.js      las decisiones de una persona: subido a main, no tener en cuenta
 src/almacen.js     dónde se guardan esas decisiones y la última medición
