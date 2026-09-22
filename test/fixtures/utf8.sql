@@ -1,0 +1,1 @@
+﻿CREATE PROCEDURE [dbo].[sp_prueba] AS SELECT 1;
