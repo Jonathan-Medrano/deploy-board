@@ -1,11 +1,12 @@
 import { crearClienteAdo } from './ado/client.js';
 import { descubrirAdjuntos, aWorkItem } from './fuentes/adjuntos.js';
-import { descubrirRepoEnAdo, REPO_POR_DEFECTO, RAMA_POR_DEFECTO } from './fuentes/repoAdo.js';
+import { descubrirRepoEnAdo, REPO_POR_DEFECTO, RAMA_POR_DEFECTO, CARPETA_POR_DEFECTO } from './fuentes/repoAdo.js';
 import { reconciliar } from './reconciliador/index.js';
 import { medirAmbiente } from './db/ejecutar.js';
 import { validarEscalera } from './desvios/escalera.js';
 import { construirReporte } from './reporte.js';
 import { rolesDesde } from './roles.js';
+import { unificarPersonas } from './identidades.js';
 import { marcarEnMain } from './enMain.js';
 
 export const OPCIONES_POR_DEFECTO = { ambientes: ['dev', 'stage'], destino: 'stage' };
@@ -100,6 +101,19 @@ export async function medirTodo(opciones = {}, deps = {}) {
     }
   }
 
+  // Una persona llega con un nombre por fuente (Azure, su git local, el .env) y la pantalla
+  // la partia en varias. Las firmas del repo son el material para unirlas; si no se pueden
+  // leer, se une con lo que haya y se avisa.
+  let autores = [];
+  if (ado.autoresDe) {
+    try {
+      autores = await ado.autoresDe(delRepo.repo, CARPETA_POR_DEFECTO, delRepo.rama);
+    } catch (e) {
+      avisos.push(`No pude leer los autores de ${delRepo.repo} (${e.message}): una misma persona puede aparecer con dos nombres en los pendientes.`);
+    }
+  }
+  const roles = unificarPersonas({ wis, scripts, roles: rolesDesde(env), autores });
+
   const enMain = archivosDeMain ? marcarEnMain(scripts, archivosDeMain) : {};
 
   const medir = deps.medirAmbiente || medirAmbiente;
@@ -112,7 +126,7 @@ export async function medirTodo(opciones = {}, deps = {}) {
   const reporte = construirReporte({
     scripts, wis, tasks, estados,
     destino: o.destino, ambientes: o.ambientes,
-    roles: rolesDesde(env),
+    roles,
     enMain, ramaMain: ramaMainUsada,
   });
 

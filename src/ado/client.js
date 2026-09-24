@@ -78,7 +78,9 @@ export function crearClienteAdo(env = process.env, deps = {}) {
       for (const r of (u.relations && u.relations.added) || []) {
         if (r.rel !== 'AttachedFile') continue;
         const nombre = (r.attributes || {}).name;
-        if (nombre) out[nombre] = (u.revisedBy || {}).displayName || null;
+        if (nombre) out[nombre] = u.revisedBy && u.revisedBy.displayName
+          ? { nombre: u.revisedBy.displayName, email: u.revisedBy.uniqueName || null }
+          : null;
       }
     }
     return out;
@@ -112,10 +114,19 @@ export function crearClienteAdo(env = process.env, deps = {}) {
         `&searchCriteria.$top=1&${API}`;
       const c = (((await (await api(url)).json()).value) || [])[0];
       if (!c || !c.author) return null;
-      return { nombre: c.author.name || null, fecha: (c.author.date || '').slice(0, 10) || null };
+      return { nombre: c.author.name || null, email: c.author.email || null, fecha: (c.author.date || '').slice(0, 10) || null };
     } catch {
       return null;
     }
+  }
+
+  // Todas las firmas (nombre + mail) que dejaron commits en la carpeta. No es para nombrar a
+  // nadie: es el material para unir los nombres distintos de una misma persona.
+  async function autoresDe(repo, carpeta, rama) {
+    const url = `${git(repo)}/commits?searchCriteria.itemPath=${encodeURIComponent(carpeta)}` +
+      `&searchCriteria.itemVersion.version=${encodeURIComponent(rama)}&searchCriteria.$top=1000&${API}`;
+    const commits = ((await (await api(url)).json()).value) || [];
+    return commits.filter((c) => c.author).map((c) => ({ nombre: c.author.name || null, email: c.author.email || null }));
   }
 
   // Las hojas del arbol de iteraciones: los sprints de verdad, no los nodos de año.
@@ -144,6 +155,6 @@ export function crearClienteAdo(env = process.env, deps = {}) {
 
   return {
     wiql, getWorkItems, descargarAdjunto, quienSubioCadaAdjunto, setEstado, setCampos, listarEstados,
-    listarArchivos, descargarArchivo, ultimoCommitDe, listarIteraciones,
+    listarArchivos, descargarArchivo, ultimoCommitDe, autoresDe, listarIteraciones,
   };
 }

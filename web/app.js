@@ -29,7 +29,7 @@
     },
   };
 
-  var D = null, CONFIG = null, ORG = null, COLSPAN = 10, SPRINTS = null;
+  var D = null, CONFIG = null, ORG = null, COLSPAN = 9, SPRINTS = null;
   var SEV = { bloqueante:'b', alto:'a', medio:'m' };
 
   /* ---------------- semantica de cada ola ---------------- */
@@ -140,8 +140,7 @@
       num = bloq; ok = bloq === 0;
       tit = bloq === 0 ? 'Listo para subir' : 'No subas todavía';
       sub = bloq === 0 ? 'todo el sprint llegó a stage o ya está en main'
-                       : (bloq === 1 ? 'script del sprint no llegó a stage, así que no va a llegar a main'
-                                     : 'scripts del sprint no llegaron a stage, así que no van a llegar a main');
+                       : (bloq === 1 ? '1 script falta por ejecutar en stage' : bloq + ' scripts faltan por ejecutar en stage');
     }
     v.classList.toggle('ok', ok);
     document.getElementById('vnum').textContent = num;
@@ -150,10 +149,6 @@
 
     var ad = document.getElementById('ademas');
     var lineas = [];
-    if (faltaDev) {
-      lineas.push('Además, <b>' + faltaDev + '</b> ' + (faltaDev === 1 ? 'script no corrió' : 'scripts no corrieron') +
-        ' en <b>dev</b>. No bloquea la subida a main, pero sigue siendo cierto.');
-    }
     /* El numero de arriba cuenta lo filtrado, asi que hay que decir explicitamente cuanto
        queda afuera: si no, una lista corta se lee como si fuera todo el sprint. */
     var tapadas = D.filas.length - todas.length;
@@ -175,20 +170,30 @@
        de la subida (cerrado/pausado), asi el numero grande sigue significando lo mismo en
        toda la fila de tiles. */
     var pre = todas.filter(function(f){ return !fueraDeLaSubida(f) && f.pre; }).length;
+    /* Arriba solo lo que cambia lo que hacés al subir: cuántos PRE van antes del código y
+       cuántos ya están en main. El resto es contexto y va en una línea chica. */
+    var ningunLado = todas.filter(function(f){ return !fueraDeLaSubida(f) && D.meta.ambientes.every(function(a){ return f.est[a] !== 'OK'; }); }).length;
+    var mas = [
+      '<b>' + todas.length + '</b> ' + (filtrando ? 'en la lista filtrada' : 'scripts del sprint'),
+      '<b>' + stage + '</b> ya en stage',
+    ];
+    if (devMedido) mas.push('<b>' + faltaDev + '</b> no corrieron en dev');
+    mas.push('<b>' + ningunLado + '</b> no corrieron en ningún lado');
+    if (ign) mas.push('<b>' + ign + '</b> sin tener en cuenta');
     document.getElementById('contadores').innerHTML =
-      tile(todas.length, filtrando ? 'scripts en la lista filtrada' : 'scripts del sprint', filtrando ? 'filtrado' : '') +
-      tile(stage, 'ya están en stage') +
-      tile(subidos, 'ya en main (rama o marcado)', 'arriba') +
-      (devMedido ? tile(faltaDev, 'no corrieron en dev', 'hay') : '') +
-      (ign ? tile(ign, 'sin tener en cuenta') : '') +
       (pre ? tile(pre, 'PRE van antes del código', 'hay') : '') +
-      tile(todas.filter(function(f){ return !fueraDeLaSubida(f) && D.meta.ambientes.every(function(a){ return f.est[a] !== 'OK'; }); }).length, 'no corrieron en ningún lado');
+      (subidos ? tile(subidos, 'ya en main') : '') +
+      (filtrando ? tile(todas.length, 'en la lista filtrada', 'filtrado') : '') +
+      '<div class="cont-mas">' + mas.join(' · ') + '</div>';
   }
 
   /* ---------------- filtros por tipo y por estado ---------------- */
   function pintarEstados(){
+    /* Tipo y PRE cuentan lo mismo que la tabla y que el contador de arriba: lo que entra en la
+       subida. Contar tambien cerrados y pausados daba "15 PRE y 15 sin PRE" con 15 filas a la vista. */
+    var enLaSubida = D.filas.filter(function(f){ return !fueraDeLaSubida(f); });
     var cuenta = {};
-    D.filas.forEach(function(f){ var t = f.tipo || 'otro'; cuenta[t] = (cuenta[t] || 0) + 1; });
+    enLaSubida.forEach(function(f){ var t = f.tipo || 'otro'; cuenta[t] = (cuenta[t] || 0) + 1; });
 
     var chipsTipo = ORDEN_TIPOS.filter(function(t){ return cuenta[t]; }).map(function(t){
       var on = estado.tiposOcultos.indexOf(t) < 0;
@@ -198,8 +203,8 @@
 
     /* Lente de PRE, al lado de los chips de tipo. Solo aparece si hay al menos un PRE en el
        sprint: sin eso, "Sin PRE" seria identico a "Todos" y el chip no serviria de nada. */
-    var totalPre = D.filas.filter(function(f){ return f.pre; }).length;
-    var totalNoPre = D.filas.length - totalPre;
+    var totalPre = enLaSubida.filter(function(f){ return f.pre; }).length;
+    var totalNoPre = enLaSubida.length - totalPre;
     var chipsPre = totalPre ?
       '<button type="button" class="chip pre-chip" data-pre="pre" aria-pressed="' + (estado.filtroPre === 'pre') + '"' +
         ' title="Ver sólo los scripts PRE, los que corren antes del código">PRE <span class="n">· ' + totalPre + '</span></button>' +
@@ -233,7 +238,7 @@
   function pintarCabecera(){
     var el = document.getElementById('cabecera');
     if (!el) return;
-    el.innerHTML = '<th>#</th><th>Work item</th><th>Script</th><th>Tipo</th><th>Acción</th>' +
+    el.innerHTML = '<th>#</th><th>Work item</th><th>Script</th><th>Tipo</th>' +
       D.meta.ambientes.map(function(a){ return '<th>' + esc(a.toUpperCase()) + '</th>'; }).join('') +
       '<th>main</th><th>Responsable</th>';
   }
@@ -273,15 +278,14 @@
     } else {
       var inferido = f.via === 'contenedor';
       wiCell =
-        '<a class="wilink" href="' + ORG + f.wi + '" target="_blank" rel="noopener" title="Abrir el work item ' + f.wi + ' en Azure DevOps">' +
+        '<a class="wilink" href="' + ORG + f.wi + '" target="_blank" rel="noopener" title="Abrir el work item ' + f.wi + ' en Azure DevOps' + (f.padre ? ' · padre ' + f.padre : '') + '">' +
           '<b>' + f.wi + '</b>' +
           (inferido && f.wiTit ? '<em>' + esc(f.wiTit) + '</em>' : '') +
           (inferido
             ? '<em class="inferido" title="El nombre no trae [U-xxxxx]: el vinculo sale del work item que lo CONTIENE, no del nombre.">por contenedor</em>'
             : (f.wiEstado ? '<em>' + esc(f.wiEstado) + '</em>' : '')) +
           fueraSprint +
-        '</a>' +
-        (f.padre ? '<a class="padre" href="' + ORG + f.padre + '" target="_blank" rel="noopener" title="Abrir el work item padre ' + f.padre + '">padre ' + f.padre + '</a>' : '');
+        '</a>';
     }
 
     var quien = m ? (((CONFIG && m.por === CONFIG.quien) ? 'vos' : (m.por || 'alguien')) + (m.fecha ? ' · ' + m.fecha : '')) : '';
@@ -323,13 +327,12 @@
     return '<tr class="' + clases.join(' ') + '">' +
       '<td class="num">' + numero + '</td>' +
       '<td class="wi">' + wiCell + '</td>' +
-      '<td class="scriptname">' + (f.pre ? '<span class="pre">PRE · antes del código</span> ' : '') + esc(f.desc) +
-        '<span class="arch">' + esc(f.arch) + '</span>' +
-        (nota ? '<span class="nota-subida' + (nota.cls ? ' ' + nota.cls : '') + '">' + esc(nota.txt) + '</span>' : '') +
-        ((f.obj && f.obj.length) ? '<span class="objs">' + f.obj.map(esc).join(' · ') + '</span>' : '') + '</td>' +
+      /* El nombre de archivo y los objetos que toca son para cuando hay que buscarlo, no para
+         leer la lista: van en el tooltip, no en la fila. */
+      '<td class="scriptname" title="' + esc(f.arch + ((f.obj && f.obj.length) ? '\n' + f.obj.join(' · ') : '')) + '">' + esc(f.desc) +
+        (nota ? '<span class="nota-subida' + (nota.cls ? ' ' + nota.cls : '') + '">' + esc(nota.txt) + '</span>' : '') + '</td>' +
       '<td class="tipo-cell"><span class="badge t-' + (f.tipo || 'otro') + '" title="' + esc(TIPOS[f.tipo || 'otro'].ayuda) + '">' +
-        esc(TIPOS[f.tipo || 'otro'].corto) + '</span></td>' +
-      '<td class="acc">' + esc(f.acc || '—') + '</td>' +
+        esc(TIPOS[f.tipo || 'otro'].corto) + '</span><span class="acc">' + esc(f.acc || '') + '</span></td>' +
       ambCells +
       '<td class="main-cell">' + mainCell + '</td>' +
       '<td class="resp' + (f.resp ? '' : ' nadie') + '">' + esc(f.resp || 'sin identificar') + '</td>' +
@@ -469,20 +472,29 @@
   }
   function pintarPersonas(){
     var gs = D.personas.filter(function(g){ return !estado.persona || g.responsable === estado.persona; });
+    var total = gs.reduce(function(n, g){ return n + g.pendientes.length; }, 0);
+    document.getElementById('personasCuenta').textContent = gs.length ? total + (total === 1 ? ' pendiente' : ' pendientes') + ' · ' + gs.length + (gs.length === 1 ? ' persona' : ' personas') : '';
+    /* Plegadas: la grilla muestra quién y cuánto de un vistazo. Si se filtró a una sola
+       persona, se abre sola, porque es lo único que hay para ver. */
+    var abrir = !!estado.persona;
     document.getElementById('personas').innerHTML = gs.map(function(g){
       var anon = /sin responsable/.test(g.responsable);
-      return '<article class="persona"><header>' +
+      var bloq = g.pendientes.filter(function(p){ return p.severidad === 'bloqueante'; }).length;
+      return '<details class="persona"' + (abrir ? ' open' : '') + '><summary>' +
         '<h3' + (anon ? ' class="nadie"' : '') + '>' + esc(anon ? 'Sin responsable identificado' : g.responsable) + '</h3>' +
-        '<span class="cuenta">' + g.pendientes.length + (g.pendientes.length === 1 ? ' pendiente' : ' pendientes') + '</span>' +
-        '</header><ul class="pend">' +
+        '<span class="cuenta">' + (bloq ? '<span class="bloq">' + bloq + (bloq === 1 ? ' bloquea' : ' bloquean') + '</span> · ' : '') +
+        g.pendientes.length + (g.pendientes.length === 1 ? ' pendiente' : ' pendientes') + '</span>' +
+        '</summary><ul class="pend">' +
         g.pendientes.map(function(p){
           return '<li><span class="sev ' + (SEV[p.severidad] || 'm') + '"></span><div><b>' + esc(p.accion) + '</b>' + motivoHTML(p.motivos) + '</div></li>';
-        }).join('') + '</ul></article>';
+        }).join('') + '</ul></details>';
     }).join('');
   }
 
   /* ---------------- revisar a mano ---------------- */
   function pintarRevisar(){
+    var n = (D.revisar || []).length;
+    document.getElementById('revisarCuenta').textContent = n ? String(n) : '';
     document.getElementById('revisar').innerHTML = (D.revisar || []).map(function(r){
       var li = function(lado, arr){
         return (arr || []).map(function(a){ return '<li><span class="lado">' + lado + '</span><span class="f">' + esc(a) + '</span></li>'; }).join('');
@@ -494,15 +506,14 @@
       var wiHeader = ORG
         ? '<a class="wilink-inline" href="' + ORG + r.wiId + '" target="_blank" rel="noopener">US ' + r.wiId + '</a>'
         : 'US ' + r.wiId;
-      return '<article class="rev">' +
-        '<div class="rev-head"><h3>' + wiHeader +
-        (r.titulo ? ' · ' + esc(r.titulo) : '') + '</h3>' +
+      return '<details class="rev"><summary>' +
+        '<h3>' + wiHeader + (r.titulo ? ' · ' + esc(r.titulo) : '') + '</h3>' +
         '<span class="tag' + (r.afectaEstePase ? ' ahora' : '') + '">' +
         (r.afectaEstePase ? 'afecta a este pase' : 'afecta al próximo pase') + '</span>' +
-        '<span class="conteo">tarjeta <b>' + r.enLaTarjeta + '</b> · repo <b>' + r.enElRepo + '</b></span></div>' +
-        '<ul>' + li('solo tarjeta', r.soloEnLaTarjeta) + li('solo repo', r.soloEnElRepo) + num + '</ul>' +
+        '<span class="conteo">tarjeta <b>' + r.enLaTarjeta + '</b> · repo <b>' + r.enElRepo + '</b></span></summary>' +
+        '<div class="rev-body"><ul>' + li('solo tarjeta', r.soloEnLaTarjeta) + li('solo repo', r.soloEnElRepo) + num + '</ul>' +
         '<div class="conteo">Quien lo tiene que revisar: <b>' + esc(r.responsable || 'sin identificar') + '</b></div>' +
-        '</article>';
+        '</div></details>';
     }).join('');
   }
 
@@ -519,7 +530,7 @@
 
   function refrescarConD(){
     ORG = D.meta.wiBase || null;
-    COLSPAN = 8 + D.meta.ambientes.length;
+    COLSPAN = 7 + D.meta.ambientes.length;
     pintarEyebrow();
     pintarMedido();
     pintarCabecera();
@@ -564,6 +575,14 @@
     estado.ola = b.dataset.ola;
     Array.prototype.forEach.call(olas.children, function(c){ c.setAttribute('aria-pressed', String(c === b)); });
     pintarTodo();
+  });
+
+  /* Orden de ejecución viene abierta y las otras dos plegadas; después cada una recuerda
+     cómo la dejaste. */
+  Array.prototype.forEach.call(document.querySelectorAll('details.seccion'), function(d){
+    var k = 'deployboard.sec.' + d.dataset.sec;
+    d.open = leerPref(k, d.dataset.sec === 'orden');
+    d.addEventListener('toggle', function(){ guardarPref(k, d.open); });
   });
 
   var filtros = document.getElementById('filtros');
@@ -717,17 +736,22 @@
   function pintarAvisoDesfasado(){
     var el = document.getElementById('avisoDesfasado');
     var selS = document.getElementById('selSprint');
+    var contenido = document.getElementById('contenido');
     if (!el || !selS) return;
-    if (!D || !SPRINTS) { el.hidden = true; return; }
+    if (!D || !SPRINTS) { el.hidden = true; contenido.classList.remove('desfasado'); return; }
     var it = iteracionSeleccionada();
     var selC = document.getElementById('selCarpeta');
     var mismoSprint = !D.meta.iteracion || D.meta.iteracion === selS.value;
     var mismaCarpeta = (D.meta.sprint || '') === (selC.value || '');
-    if (mismoSprint && mismaCarpeta) { el.hidden = true; el.textContent = ''; return; }
+    if (mismoSprint && mismaCarpeta) { el.hidden = true; contenido.classList.remove('desfasado'); return; }
     var mostrado = D.meta.sprint || D.meta.iteracion || 'un sprint sin identificar';
     var elegido = (it && it.nombre) || selS.value || 'la selección actual';
-    el.textContent = 'Estás viendo la medición de ' + mostrado + '. Apretá "Volver a medir" para medir ' + elegido + '.';
+    document.getElementById('avisoDesfasadoTexto').innerHTML = mismoSprint
+      ? 'Cambiaste la carpeta del repo: lo de abajo sigue siendo la medición anterior. <b>Todavía no se midió.</b>'
+      : 'Lo de abajo es de <b>' + esc(mostrado) + '</b>. Elegiste <b>' + esc(elegido) + '</b>: todavía no se midió.';
+    document.getElementById('medirElegido').textContent = mismoSprint ? 'Medir de nuevo' : 'Medir ' + elegido;
     el.hidden = false;
+    contenido.classList.add('desfasado');
   }
 
   function pintarSelectorSprint(){
@@ -804,6 +828,7 @@
   }
 
   document.getElementById('medirAhora').addEventListener('click', function(){ ejecutarMedicion(this); });
+  document.getElementById('medirElegido').addEventListener('click', function(){ ejecutarMedicion(this); });
   var btnRecargar = document.getElementById('recargar');
   if (btnRecargar) btnRecargar.addEventListener('click', function(){ ejecutarMedicion(this); });
 

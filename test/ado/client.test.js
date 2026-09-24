@@ -49,7 +49,7 @@ test('un error de ADO no arrastra el PAT en el mensaje', async () => {
 test('quienSubioCadaAdjunto saca la persona del historial de revisiones', async () => {
   const updates = {
     value: [
-      { revisedBy: { displayName: 'Ana Maria Gonzalez' },
+      { revisedBy: { displayName: 'Ana Maria Gonzalez', uniqueName: 'ana@trizap.net' },
         relations: { added: [{ rel: 'AttachedFile', attributes: { name: '[U-17714] - 01 - X - ALTER.sql' } }] } },
       { revisedBy: { displayName: 'Otro Dev' },
         relations: { added: [{ rel: 'Hyperlink', attributes: { name: 'no es adjunto' } }] } },
@@ -58,7 +58,7 @@ test('quienSubioCadaAdjunto saca la persona del historial de revisiones', async 
   };
   const c = crearClienteAdo(env, { fetch: async () => ({ ok: true, status: 200, json: async () => updates }) });
   const r = await c.quienSubioCadaAdjunto(25034);
-  assert.deepEqual(r, { '[U-17714] - 01 - X - ALTER.sql': 'Ana Maria Gonzalez' });
+  assert.deepEqual(r, { '[U-17714] - 01 - X - ALTER.sql': { nombre: 'Ana Maria Gonzalez', email: 'ana@trizap.net' } });
 });
 
 test('si el mismo archivo se resubio, gana la ultima revision', async () => {
@@ -69,7 +69,7 @@ test('si el mismo archivo se resubio, gana la ultima revision', async () => {
     ],
   };
   const c = crearClienteAdo(env, { fetch: async () => ({ ok: true, status: 200, json: async () => updates }) });
-  assert.equal((await c.quienSubioCadaAdjunto(1))['a.sql'], 'Ultimo');
+  assert.equal((await c.quienSubioCadaAdjunto(1))['a.sql'].nombre, 'Ultimo');
 });
 
 test('acepta AZURE_ORG_URL, que es el nombre que ya usa el equipo', async () => {

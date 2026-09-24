@@ -220,3 +220,31 @@ test('sin work items faltantes no se hace ninguna llamada extra', async () => {
   await medirTodo({ sprint: 'S', ambientes: [] }, deps({ ado, descubrirRepo: async () => [] }));
   assert.equal(llamadas, 0);
 });
+
+test('los pendientes de una persona con dos nombres salen bajo uno solo, y el rol acepta su mail', async () => {
+  const ado = {
+    ...adoBase(),
+    wiql: async () => [7],
+    getWorkItems: async () => [{ id: 7, fields: { 'System.WorkItemType': 'User Story', 'System.State': 'Active',
+      'System.AssignedTo': { displayName: 'Juan Ignacio Denipoti', uniqueName: 'juan.ignacio.denipoti@trizap.net' } }, relations: [] }],
+    autoresDe: async () => [{ nombre: 'Juani Denipoti', email: 'juan.ignacio.denipoti@trizap.net' }],
+  };
+  const { reporte } = await medirTodo(
+    { sprint: 'S', ambientes: [] },
+    deps({
+      ado,
+      env: { RESPONSABLE_PROMOCION: 'juan.ignacio.denipoti@trizap.net' },
+      descubrirRepo: async () => [{ id: 'r1', archivo: '[U-7] - x - ALTER.sql', wiId: 7, fuente: 'repo', objetos: [], sondas: [],
+        responsables: { commiteoEnElRepo: { nombre: 'Juani Denipoti', email: 'juan.ignacio.denipoti@trizap.net', fecha: '2026-09-24' } } }],
+    })
+  );
+  const nombres = JSON.stringify(reporte);
+  assert.equal(nombres.includes('Juani Denipoti'), false, nombres);
+});
+
+test('si no se pueden leer los autores, se mide igual y se avisa', async () => {
+  const ado = { ...adoBase(), autoresDe: async () => { throw new Error('500'); } };
+  const { reporte, avisos } = await medirTodo({ sprint: 'S', ambientes: [] }, deps({ ado, descubrirRepo: async () => [] }));
+  assert.ok(reporte);
+  assert.ok(avisos.some((a) => /autores/.test(a) && /500/.test(a)), JSON.stringify(avisos));
+});

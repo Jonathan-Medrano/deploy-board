@@ -17,14 +17,14 @@ function adoFalso() {
         id: 25051,
         fields: {
           'System.WorkItemType': 'User Story', 'System.Title': 'Tienda Nube', 'System.State': 'Tested',
-          'System.AssignedTo': { displayName: 'Ana Maria Gonzalez' },
+          'System.AssignedTo': { displayName: 'Ana Maria Gonzalez', uniqueName: 'ana@trizap.net' },
           'Custom.CantidadScripts': 2, 'Custom.TieneSP': '0 - No', 'Custom.TieneReporte': '0 - No',
         },
         relations: [],
       },
     ]),
     descargarAdjunto: async () => Buffer.from('ALTER TABLE [dbo].[Integracion] ADD [ActualizarCategoriaTiendaNube] BIT NOT NULL DEFAULT 0', 'utf8'),
-    quienSubioCadaAdjunto: async () => ({ [NOMBRE]: 'Ana Maria Gonzalez' }),
+    quienSubioCadaAdjunto: async () => ({ [NOMBRE]: { nombre: 'Ana Maria Gonzalez', email: 'ana@trizap.net' } }),
   };
 }
 
@@ -65,6 +65,7 @@ test('registra quien subio el adjunto, con la fecha del ADJUNTO no la de la revi
   const { scripts } = await descubrirAdjuntos(adoFalso(), 'iter');
   assert.deepEqual(scripts[0].responsables.subioElAdjunto, {
     nombre: 'Ana Maria Gonzalez',
+    email: 'ana@trizap.net',
     fecha: '2026-09-17',
   });
 });

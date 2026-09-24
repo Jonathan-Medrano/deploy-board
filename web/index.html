@@ -59,38 +59,59 @@
   h1{font-size:clamp(26px,4.2vw,36px); font-weight:700; letter-spacing:-.015em}
   .sub{color:var(--muted); font-size:14px; margin:0}
 
-  /* ---------- selector de ola ---------- */
-  .olas{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:4px; overflow:hidden}
-  .ola{
-    background:var(--surface); border:none; text-align:left; cursor:pointer; font:inherit; color:inherit;
-    padding:14px 18px; display:flex; flex-direction:column; gap:3px; position:relative;
-  }
-  .ola:hover{background:var(--surface-2)}
-  .ola[aria-pressed="true"]{background:var(--accent-soft); box-shadow:inset 0 -3px 0 var(--accent)}
-  .ola b{font-family:"IBM Plex Sans Condensed",sans-serif; font-size:16px; font-weight:600}
-  .ola span{font-size:12px; color:var(--muted); line-height:1.4}
-  .ola .cuando{font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint)}
+  /* ---------- controles: ola + sprint en una linea ---------- */
+  .controles{display:flex; align-items:center; gap:14px 22px; flex-wrap:wrap}
+  .olas{display:inline-flex; border:1px solid var(--line); border-radius:4px; overflow:hidden; background:var(--surface)}
+  .ola{background:none; border:none; font:inherit; font-size:13.5px; font-weight:500; color:var(--muted); cursor:pointer; padding:8px 16px; white-space:nowrap}
+  .ola + .ola{border-left:1px solid var(--line)}
+  .ola:hover{color:var(--ink); background:var(--surface-2)}
+  .ola[aria-pressed="true"]{background:var(--accent-soft); color:var(--ink); box-shadow:inset 0 -2px 0 var(--accent)}
   .ola:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
 
   /* ---------- veredicto ---------- */
-  .veredicto{display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding:18px 20px; border-radius:4px;
-    background:var(--bad-bg); border:1px solid color-mix(in srgb,var(--bad) 28%,transparent); border-left:5px solid var(--bad)}
+  .veredicto{display:grid; grid-template-columns:auto minmax(0,1fr); column-gap:20px; align-items:start;
+    padding:20px 24px; border-radius:6px; background:var(--bad-bg);
+    border:1px solid color-mix(in srgb,var(--bad) 28%,transparent); border-left:6px solid var(--bad)}
   .veredicto.ok{background:var(--good-bg); border-color:color-mix(in srgb,var(--good) 28%,transparent); border-left-color:var(--good)}
-  .vnum{font-family:"IBM Plex Sans Condensed",sans-serif; font-size:44px; font-weight:700; line-height:1; color:var(--bad); font-variant-numeric:tabular-nums}
+  .vnum{font-family:"IBM Plex Sans Condensed",sans-serif; font-size:48px; font-weight:700; line-height:.95; color:var(--bad); font-variant-numeric:tabular-nums}
   .veredicto.ok .vnum{color:var(--good)}
-  .vtxt strong{display:block; font-family:"IBM Plex Sans Condensed",sans-serif; font-size:19px; font-weight:600}
-  .vtxt span{color:var(--muted); font-size:13.5px}
-  .ademas{margin-left:auto; font-size:13px; color:var(--muted); max-width:340px; border-left:1px solid color-mix(in srgb,var(--muted) 30%,transparent); padding-left:16px}
+  .vtxt{min-width:0; overflow-wrap:anywhere}
+  .vtxt strong{display:block; font-family:"IBM Plex Sans Condensed",sans-serif; font-size:22px; font-weight:600; line-height:1.2}
+  .vtxt > span{display:block; color:var(--muted); font-size:13.5px; margin-top:2px}
+  .ademas{grid-column:1 / -1; margin-top:14px; padding-top:12px; font-size:12.5px; color:var(--muted); line-height:1.5;
+    border-top:1px solid color-mix(in srgb,var(--muted) 25%,transparent)}
   .ademas b{color:var(--ink); font-variant-numeric:tabular-nums}
 
-  .contadores{display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:4px; overflow:hidden}
-  .cont{background:var(--surface); padding:13px 16px; display:flex; flex-direction:column; gap:1px}
-  .cont b{font-family:"IBM Plex Sans Condensed",sans-serif; font-size:26px; font-weight:700; font-variant-numeric:tabular-nums; line-height:1.1}
-  .cont span{font-size:12px; color:var(--muted); line-height:1.35}
+  #contenido{display:flex; flex-direction:column; gap:20px}
+  #contenido[hidden]{display:none}
+  /* Lo de abajo es de OTRO sprint mientras no se mida el elegido: atenuado para que no se lea
+     como si fuera del sprint que estas mirando en el selector. */
+  #contenido.desfasado > .veredicto, #contenido.desfasado > .contadores, #contenido.desfasado > .seccion{opacity:.35; filter:grayscale(1)}
+  #avisoDesfasado{display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:14px 18px; border-radius:6px;
+    background:var(--warn-bg); border:1px solid color-mix(in srgb,var(--warn) 45%,transparent); border-left:6px solid var(--warn);
+    font-size:14px; color:var(--ink)}
+  #avisoDesfasado[hidden]{display:none}
+  #avisoDesfasado b{color:var(--warn)}
+  #avisoDesfasado .btn-actualizar{margin-left:auto}
+  .contadores{display:flex; align-items:baseline; gap:10px 26px; flex-wrap:wrap; padding:0 4px}
+  .cont{display:flex; align-items:baseline; gap:7px}
+  .cont b{font-family:"IBM Plex Sans Condensed",sans-serif; font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; line-height:1}
+  .cont span{font-size:13px; color:var(--muted)}
   .cont.hay b{color:var(--warn)}
-  .cont.arriba b{color:var(--good)}
-  .cont.filtrado b{color:var(--accent)}
-  .cont.filtrado span{color:var(--accent)}
+  .cont.filtrado b, .cont.filtrado span{color:var(--accent)}
+  .cont-mas{flex-basis:100%; font-size:12px; color:var(--faint)}
+  .cont-mas b{color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums}
+
+  /* ---------- secciones plegables ---------- */
+  .seccion{margin-top:10px}
+  .seccion > summary{cursor:pointer; list-style:none}
+  .seccion > summary::-webkit-details-marker{display:none}
+  .seccion > summary h2::before{content:'\25B8'; display:inline-block; width:18px; font-size:14px; color:var(--faint)}
+  .seccion[open] > summary h2::before{content:'\25BE'}
+  .seccion > summary:hover h2{color:var(--accent)}
+  .seccion > summary:focus-visible{outline:2px solid var(--accent); outline-offset:3px}
+  .sec-body{display:flex; flex-direction:column; gap:12px; padding-top:14px}
+  .barra-medido{display:flex; align-items:center; gap:12px; justify-content:flex-end; flex-wrap:wrap}
 
   section{display:flex; flex-direction:column; gap:12px}
   .sec-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; border-bottom:1px solid var(--line); padding-bottom:8px}
@@ -114,8 +135,7 @@
   tbody td{padding:9px 12px; border-bottom:1px solid var(--line-soft); vertical-align:top}
   tbody tr:last-child td{border-bottom:none}
   tbody tr.b td:first-child{box-shadow:inset 3px 0 0 var(--bad)}
-  tbody tr.a td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
-  tbody tr.g td:first-child{box-shadow:inset 3px 0 0 var(--good)}
+
   /* La franja de PRE pisa la de severidad: importa mas marcar que hay que correrlo ANTES
      del codigo que el semaforo de en que ambiente corrio. */
   tbody tr.fila-pre td:first-child{box-shadow:inset 4px 0 0 var(--warn)}
@@ -142,7 +162,8 @@
   .wi .sinvinc{color:var(--faint)}
   .wi .sinvinc em{color:var(--faint)}
   .wi .sinvinc b{color:var(--faint); font-weight:600; font-size:13px; font-variant-numeric:tabular-nums}
-  .scriptname{font-size:13.5px; line-height:1.4; min-width:230px}
+  .scriptname{font-size:13.5px; line-height:1.4; min-width:230px; cursor:help}
+  .tipo-cell .acc{display:block; margin-top:3px}
   .scriptname .arch{display:block; color:var(--faint); font-size:11px; word-break:break-word; margin-top:1px}
   .scriptname .nota-subida{display:block; margin-top:3px; font-size:11.5px; color:var(--muted)}
   .scriptname .nota-subida.ok{color:var(--good)}
@@ -150,7 +171,7 @@
   .wi em.fuera-sprint{color:var(--warn); cursor:help; border-bottom:1px dotted currentColor; display:inline-block}
   .acc{font-size:11px; letter-spacing:.06em; color:var(--muted); white-space:nowrap}
   .amb{font-size:12px; font-weight:600; white-space:nowrap; font-variant-numeric:tabular-nums}
-  .amb.ok{color:var(--good)} .amb.falta{color:var(--bad)} .amb.dud{color:var(--warn)}
+  .amb.ok{color:var(--faint); font-weight:500} .amb.falta{color:var(--bad)} .amb.dud{color:var(--warn)}
   .pre{display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:11px; font-weight:700; letter-spacing:.06em;
     padding:2px 7px; border-radius:3px; background:var(--warn-bg); color:var(--warn); vertical-align:middle;
     border:1px solid color-mix(in srgb,var(--warn) 45%,transparent)}
@@ -172,42 +193,59 @@
   .marca.puesta{color:var(--good); font-weight:600}
   .sin-db{color:var(--faint); font-size:11px; font-style:italic}
 
-  .personas{display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); gap:14px; align-items:start}
-  .persona{background:var(--surface); border:1px solid var(--line); border-radius:4px; padding:16px 18px; display:flex; flex-direction:column; gap:12px}
-  .persona > header{display:flex; align-items:baseline; justify-content:space-between; gap:10px; border-bottom:1px solid var(--line-soft); padding-bottom:9px}
-  .persona h3{font-size:16px; font-weight:600}
+  .personas{display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:10px; align-items:start}
+  .persona{background:var(--surface); border:1px solid var(--line); border-radius:4px}
+  .persona[open]{grid-column:1 / -1}
+  .persona > summary{display:flex; align-items:baseline; gap:10px; padding:11px 14px; cursor:pointer; list-style:none}
+  .persona > summary::-webkit-details-marker{display:none}
+  .persona > summary::before{content:'\25B8'; font-size:11px; color:var(--faint); width:10px; flex:none}
+  .persona[open] > summary::before{content:'\25BE'}
+  .persona > summary:hover h3{color:var(--accent)}
+  .persona > summary:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
+  .persona h3{font-size:15px; font-weight:600; flex:1; min-width:0}
   .persona h3.nadie{color:var(--faint); font-style:italic; font-weight:500}
   .cuenta{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--faint); white-space:nowrap}
-  .pend{display:flex; flex-direction:column; gap:10px; margin:0; padding:0; list-style:none}
-  .pend li{display:grid; grid-template-columns:auto 1fr; gap:9px; align-items:start}
+  .cuenta .bloq{color:var(--bad); font-weight:600}
+  .pend{display:flex; flex-direction:column; gap:10px; margin:0; padding:4px 18px 16px 38px; list-style:none; border-top:1px solid var(--line-soft)}
+  .pend li{display:grid; grid-template-columns:auto 1fr; gap:9px; align-items:start; padding-top:8px}
   .sev{width:8px; height:8px; border-radius:50%; margin-top:6px; flex:none}
-  .sev.b{background:var(--bad)} .sev.a{background:var(--warn)} .sev.m{background:var(--faint)}
+  .sev.b{background:var(--bad)} .sev.a, .sev.m{background:var(--line)}
   .pend b{font-weight:600; font-size:13.5px; display:block}
   .pend .motivo{color:var(--muted); font-size:12px; line-height:1.45; margin-top:2px; word-break:break-word}
   .pend .motivo .mfile{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--faint); display:block}
   .pend .motivo ul{margin:3px 0 0; padding-left:14px}
 
-  .revisar{display:flex; flex-direction:column; gap:12px}
-  .rev{background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--warn); border-radius:4px;
-    padding:15px 18px; display:flex; flex-direction:column; gap:9px}
-  .rev-head{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
-  .rev h3{font-size:15.5px; font-weight:600}
+  .revisar{display:flex; flex-direction:column; gap:8px}
+  .rev{background:var(--surface); border:1px solid var(--line); border-radius:4px}
+  .rev > summary{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; padding:10px 14px; cursor:pointer; list-style:none}
+  .rev > summary::-webkit-details-marker{display:none}
+  .rev > summary::before{content:'\25B8'; font-size:11px; color:var(--faint); width:10px; flex:none}
+  .rev[open] > summary::before{content:'\25BE'}
+  .rev > summary:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
+  .rev-body{display:flex; flex-direction:column; gap:9px; padding:4px 18px 14px 38px; border-top:1px solid var(--line-soft)}
+  .rev h3{font-size:14.5px; font-weight:600}
   .tag{font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.08em; text-transform:uppercase;
     padding:2px 7px; border-radius:2px; background:var(--surface-2); color:var(--muted); border:1px solid var(--line)}
   .tag.ahora{background:var(--bad-bg); color:var(--bad); border-color:color-mix(in srgb,var(--bad) 30%,transparent)}
   .conteo{font-size:13px; color:var(--muted)}
+  .rev > summary .conteo{margin-left:auto; font-size:12px}
   .conteo b{font-variant-numeric:tabular-nums; color:var(--ink)}
-  .rev ul{margin:0; padding-left:0; list-style:none; display:flex; flex-direction:column; gap:5px}
+  .rev ul{margin:0; padding-left:0; list-style:none; display:flex; flex-direction:column; gap:5px; padding-top:8px}
   .rev li{font-size:12px; display:grid; grid-template-columns:auto 1fr; gap:8px; align-items:baseline}
   .rev li .lado{font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--faint); white-space:nowrap}
   .rev li .f{font-family:"IBM Plex Mono",monospace; font-size:11.5px; word-break:break-word}
+  h2 .cuenta{font-size:12px; font-weight:400; margin-left:6px}
 
   .limites{background:var(--surface-2); border:1px dashed var(--line); border-radius:4px; padding:16px 20px}
   .limites h2{font-size:16px; margin-bottom:8px}
   .limites ul{margin:0; padding-left:18px; display:flex; flex-direction:column; gap:6px}
   .limites li{font-size:13px; color:var(--muted); line-height:1.5}
   .limites strong{color:var(--ink); font-weight:600}
-  footer{color:var(--faint); font-size:12px; border-top:1px solid var(--line); padding-top:14px; line-height:1.6}
+  footer{color:var(--faint); font-size:12px; border-top:1px solid var(--line); padding-top:14px; margin-top:14px; line-height:1.6}
+  footer p{margin:8px 0 0}
+  .no-medido summary{cursor:pointer; color:var(--muted); font-size:12.5px}
+  .no-medido ul{margin:8px 0 0; padding-left:18px; display:flex; flex-direction:column; gap:6px}
+  .no-medido strong{color:var(--muted)}
   .vacio{color:var(--faint); font-size:13px; font-style:italic; padding:14px 0}
   tbody tr.sep td{padding:0; background:var(--surface-2); border-top:1px solid var(--line); border-bottom:1px solid var(--line)}
   .toggle{display:flex; align-items:center; gap:9px; width:100%; padding:9px 12px; font:inherit; font-size:12.5px; background:none; border:none; cursor:pointer; color:var(--muted); text-align:left}
@@ -217,11 +255,12 @@
   .toggle:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
   .rev h3 a.wilink-inline{color:var(--accent); text-decoration:none; border-bottom:1px solid transparent}
   .rev h3 a.wilink-inline:hover{border-bottom-color:currentColor}
-  #aviso, #avisoDesfasado{background:var(--warn-bg); border:1px solid color-mix(in srgb,var(--warn) 35%,transparent); border-radius:4px; padding:10px 14px; font-size:13px; color:var(--warn); margin:0}
-  .selector-sprint{display:flex; align-items:flex-end; gap:18px; flex-wrap:wrap; padding:14px 18px; background:var(--surface); border:1px solid var(--line); border-radius:4px}
-  .selector-sprint label{display:flex; flex-direction:column; gap:4px; font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--faint)}
-  .selector-sprint select{font:inherit; font-size:13px; padding:6px 9px; border-radius:3px; border:1px solid var(--line); background:var(--surface); color:var(--ink); min-width:230px; text-transform:none; letter-spacing:normal}
-  #avisoCarpeta{flex:1 1 260px; align-self:center; margin:0; font-size:12.5px; color:var(--warn)}
+  #aviso{background:var(--warn-bg); border:1px solid color-mix(in srgb,var(--warn) 35%,transparent); border-radius:4px; padding:10px 14px; font-size:13px; color:var(--warn); margin:0}
+  .selector-sprint{display:flex; align-items:center; gap:10px 18px; flex-wrap:wrap; margin-left:auto}
+  .selector-sprint label{display:flex; align-items:center; gap:7px; font-size:12px; color:var(--faint)}
+  .selector-sprint select{font:inherit; font-size:13px; padding:5px 8px; border-radius:3px; border:1px solid var(--line); background:var(--surface); color:var(--ink); max-width:260px}
+  #avisoCarpeta{margin:0; font-size:12.5px; color:var(--warn)}
+  .barra-filtros{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
   #estados{display:flex; flex-direction:column; gap:7px}
   .franja{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
   .franja .lbl{font-family:"IBM Plex Mono",monospace; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); margin-right:2px; min-width:118px}
@@ -253,13 +292,7 @@
   :root[data-theme="dark"] .chip.pre-chip[aria-pressed="true"]{color:#2d2311}
   .tipo-cell{width:1%}
   .badge{display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:9.5px; font-weight:600; letter-spacing:.06em; padding:2px 6px; border-radius:2px; border:1px solid currentColor; cursor:help; white-space:nowrap}
-  .t-sp{color:#0d6b68} .t-estructura{color:#8a5a00} .t-datos{color:#5d6f70} .t-otro{color:#8b9b9c}
-  @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]) .t-sp{color:#43b8b0} :root:not([data-theme="light"]) .t-estructura{color:#f2b63f}
-    :root:not([data-theme="light"]) .t-datos{color:#93a6a6}
-  }
-  :root[data-theme="dark"] .t-sp{color:#43b8b0} :root[data-theme="dark"] .t-estructura{color:#f2b63f}
-  :root[data-theme="dark"] .t-datos{color:#93a6a6}
+  .t-sp, .t-estructura, .t-datos, .t-otro{color:var(--muted)}
   .objs{display:block; font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--accent); margin-top:2px; opacity:.8}
   .barra{display:flex; align-items:center; gap:12px; flex-wrap:wrap}
   #medido{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--faint)}
@@ -281,7 +314,6 @@
     <button type="button" id="tema" class="btn-secundario">Modo oscuro</button>
     <div class="eyebrow" id="eyebrow"></div>
     <h1>Antes de Subir</h1>
-    <p class="sub">Qué scripts faltan, en qué ambiente, y quién los tiene que correr. Marcá lo que ya subiste y deja de contar.</p>
   </header>
 
   <div id="actualizacion" hidden>
@@ -297,45 +329,36 @@
   </div>
 
   <div id="contenido" hidden>
-    <div class="selector-sprint" id="selectorSprint">
-      <label>Sprint
-        <select id="selSprint"></select>
-      </label>
-      <label>Carpeta del repo
-        <select id="selCarpeta"></select>
-      </label>
-      <p id="avisoCarpeta" hidden></p>
+    <div class="controles">
+      <div class="olas" id="olas" role="group" aria-label="Qué subida estás preparando">
+        <button type="button" class="ola" data-ola="stage" aria-pressed="true">stage → main</button>
+        <button type="button" class="ola" data-ola="dev" aria-pressed="false">dev → stage → main</button>
+      </div>
+      <div class="selector-sprint" id="selectorSprint">
+        <label>Sprint <select id="selSprint"></select></label>
+        <label>Carpeta <select id="selCarpeta"></select></label>
+      </div>
     </div>
-
-    <p id="avisoDesfasado" hidden></p>
-
-    <div class="olas" id="olas" role="group" aria-label="Ola de subida">
-      <button class="ola" data-ola="stage" aria-pressed="true">
-        <span class="cuando">Lunes o martes de la 2ª semana</span>
-        <b>Subida de stage → main</b>
-        <span>Sube <strong>lo que ya está en stage</strong>, sea de este sprint o no. Lo que todavía no llegó a stage queda para la próxima.</span>
-      </button>
-      <button class="ola" data-ola="dev" aria-pressed="false">
-        <span class="cuando">Fin del sprint</span>
-        <b>Subida de dev → stage → main</b>
-        <span>El <strong>sprint completo</strong>. Lo que no llegó a stage no va a llegar a main: eso sí bloquea.</span>
-      </button>
+    <p id="avisoCarpeta" hidden></p>
+    <div id="avisoDesfasado" role="status" hidden>
+      <span id="avisoDesfasadoTexto"></span>
+      <button type="button" id="medirElegido" class="btn-actualizar">Medir</button>
     </div>
 
     <div class="veredicto" id="veredicto">
       <div class="vnum" id="vnum">0</div>
-      <div class="vtxt"><strong id="vtit">—</strong><span id="vsub">—</span></div>
+      <div class="vtxt">
+        <strong id="vtit">—</strong><span id="vsub">—</span>
+      </div>
       <div class="ademas" id="ademas" hidden></div>
     </div>
 
     <div class="contadores" id="contadores"></div>
 
-    <section>
-      <div class="sec-head">
-        <h2>Orden de ejecución</h2>
-        <span class="barra" style="margin-left:auto"><span id="medido"></span><button type="button" id="recargar" class="btn-secundario">Volver a medir</button></span>
-        <p>Los <span class="pre">PRE</span> corren antes de subir el código. El orden de la lista es el orden de ejecución.</p>
-      </div>
+    <details class="seccion" id="secOrden" data-sec="orden" open>
+      <summary class="sec-head"><h2>Orden de ejecución</h2></summary>
+      <div class="sec-body">
+      <div class="barra-medido"><span id="medido"></span><button type="button" id="recargar" class="btn-secundario">Volver a medir</button></div>
       <div id="estados" role="group" aria-label="Filtros"></div>
       <div class="chips" id="filtros" role="group" aria-label="Filtrar por responsable"></div>
       <div class="tabla-wrap">
@@ -345,36 +368,34 @@
         </table>
       </div>
       <p class="vacio" id="sinFilas" hidden>No hay scripts que mostrar con ese filtro.</p>
-    </section>
-
-    <section>
-      <div class="sec-head">
-        <h2>Qué le falta a cada uno</h2>
-        <p>Cada desvío traducido al verbo que lo resuelve. Un pendiente sin dueño no se pierde: cae en su propio grupo.</p>
       </div>
-      <div class="personas" id="personas"></div>
-    </section>
+    </details>
 
-    <section>
-      <div class="sec-head">
-        <h2>Revisar a mano</h2>
-        <p>La tarjeta y el repo no coinciden. Un script que falta de un lado y otro que sobra del otro son el mismo problema.</p>
+    <details class="seccion" id="secPersonas" data-sec="personas">
+      <summary class="sec-head"><h2>Qué le falta a cada uno <span class="cuenta" id="personasCuenta"></span></h2></summary>
+      <div class="sec-body">
+        <div class="personas" id="personas"></div>
       </div>
-      <div class="revisar" id="revisar"></div>
-    </section>
+    </details>
 
-    <div class="limites">
-      <h2>Qué no se midió</h2>
-      <ul>
-        <li><strong>main no se consulta como base.</strong> Se lee la rama main del repo en Azure: si el script llegó ahí, se da por corrido en producción (badge "Ya en rama MAIN"). Los scripts que nunca se commitean sólo se pueden marcar a mano con "Corrió en main".</li>
-        <li><strong>Los ambientes medidos son los que se ven en la tabla.</strong> Lo que no está en <span class="mono">D.meta.ambientes</span> no se sondeó.</li>
-      </ul>
-    </div>
+    <details class="seccion" id="secRevisar" data-sec="revisar">
+      <summary class="sec-head"><h2>Revisar a mano <span class="cuenta" id="revisarCuenta"></span></h2><p>La tarjeta y el repo no coinciden.</p></summary>
+      <div class="sec-body">
+        <div class="revisar" id="revisar"></div>
+      </div>
+    </details>
   </div>
 
   <footer>
-    Datos medidos por <span class="mono">deploy-board</span> · lectura pura: solo <span class="mono">SELECT</span> sobre catálogo del sistema, nunca escribe en ninguna base y nunca se conecta a producción.
-    Las marcas de <strong>main</strong> se guardan en <span class="mono" id="estadoDir"></span>.
+    <details class="no-medido">
+      <summary>Qué no se midió</summary>
+      <ul>
+        <li><strong>main no se consulta como base.</strong> Se lee la rama main del repo en Azure: si el script llegó ahí, se da por corrido en producción (badge "Ya en rama MAIN"). Los scripts que nunca se commitean sólo se pueden marcar a mano con "Corrió en main".</li>
+        <li><strong>Los ambientes medidos son los que se ven en la tabla.</strong> Lo que no está en esa lista no se sondeó.</li>
+      </ul>
+    </details>
+    <p>Datos medidos por <span class="mono">deploy-board</span> · lectura pura: solo <span class="mono">SELECT</span> sobre catálogo del sistema, nunca escribe en ninguna base y nunca se conecta a producción.
+    Las marcas de <strong>main</strong> se guardan en <span class="mono" id="estadoDir"></span>.</p>
   </footer>
 </div>
 <script src="util.js"></script>

@@ -28,6 +28,7 @@ export function aWorkItem(w) {
     tieneSP: f['Custom.TieneSP'] ?? null,
     tieneReporte: f['Custom.TieneReporte'] ?? null,
     asignadoA: (f['System.AssignedTo'] || {}).displayName || null,
+    asignadoAEmail: (f['System.AssignedTo'] || {}).uniqueName || null,
   };
 }
 
@@ -81,7 +82,7 @@ export async function descubrirAdjuntos(ado, iteracion) {
           // revision vigente, que es el centinela de "todavia abierta".
           responsables: {
             subioElAdjunto: subioCada[a.nombre]
-              ? { nombre: subioCada[a.nombre], fecha: (a.creado || '').slice(0, 10) || null }
+              ? { ...subioCada[a.nombre], fecha: (a.creado || '').slice(0, 10) || null }
               : null,
           },
         });
