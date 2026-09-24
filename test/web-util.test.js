@@ -38,3 +38,27 @@ test('hoy en Argentina: 2026-09-28T12:00:00Z es mediodía del 28 en Buenos Aires
   const { hoy } = cargar();
   assert.equal(hoy(new Date('2026-09-28T12:00:00Z')), '2026-09-28');
 });
+
+test('temaEfectivo respeta la eleccion guardada por sobre el sistema', () => {
+  const { temaEfectivo } = cargar();
+  assert.equal(temaEfectivo('light', true), 'light');
+  assert.equal(temaEfectivo('dark', false), 'dark');
+});
+
+test('temaEfectivo sin eleccion guardada sigue al sistema', () => {
+  const { temaEfectivo } = cargar();
+  assert.equal(temaEfectivo(null, true), 'dark');
+  assert.equal(temaEfectivo(null, false), 'light');
+});
+
+test('temaEfectivo ignora un valor guardado que no es un tema', () => {
+  const { temaEfectivo } = cargar();
+  assert.equal(temaEfectivo('azul', true), 'dark');
+  assert.equal(temaEfectivo('', false), 'light');
+});
+
+test('temaAlternado pasa al otro tema', () => {
+  const { temaAlternado } = cargar();
+  assert.equal(temaAlternado('dark'), 'light');
+  assert.equal(temaAlternado('light'), 'dark');
+});

@@ -807,6 +807,25 @@
   var btnRecargar = document.getElementById('recargar');
   if (btnRecargar) btnRecargar.addEventListener('click', function(){ ejecutarMedicion(this); });
 
+  /* ---------------- modo claro / oscuro ---------------- */
+  /* Sin eleccion guardada sigue al sistema operativo, y cambia en vivo si el sistema cambia.
+     El boton dice a donde LLEVA, no donde estas: "Modo oscuro" se lee como una accion. */
+  var consultaOscuro = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  function prefiereOscuro(){ return !!(consultaOscuro && consultaOscuro.matches); }
+  function pintarBotonTema(){
+    var tema = temaEfectivo(leerPrefStr('deployboard.tema', null), prefiereOscuro());
+    var b = document.getElementById('tema');
+    b.textContent = tema === 'dark' ? '☀ Modo claro' : '☾ Modo oscuro';
+  }
+  document.getElementById('tema').addEventListener('click', function(){
+    var nuevo = temaAlternado(temaEfectivo(leerPrefStr('deployboard.tema', null), prefiereOscuro()));
+    guardarPrefStr('deployboard.tema', nuevo);
+    document.documentElement.setAttribute('data-theme', nuevo);
+    pintarBotonTema();
+  });
+  if (consultaOscuro && consultaOscuro.addEventListener) consultaOscuro.addEventListener('change', pintarBotonTema);
+  pintarBotonTema();
+
   /* ---------------- actualizar el sistema (git) ---------------- */
   function pintarActualizacion(info){
     var caja = document.getElementById('actualizacion');

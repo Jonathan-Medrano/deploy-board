@@ -20,3 +20,14 @@ var hoy = function (d) {
     timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(d || new Date());
 };
+
+/* El tema que se ve: la eleccion guardada gana; sin eleccion (o con basura en el storage)
+   manda el sistema operativo. */
+var temaEfectivo = function (guardado, prefiereOscuro) {
+  if (guardado === 'dark' || guardado === 'light') return guardado;
+  return prefiereOscuro ? 'dark' : 'light';
+};
+
+var temaAlternado = function (tema) {
+  return tema === 'dark' ? 'light' : 'dark';
+};

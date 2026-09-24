@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <title>Antes de Subir</title>
+<script>
+  /* Antes de pintar: si el que mira eligio un tema, se aplica ya, asi no parpadea el otro. */
+  try { var t = localStorage.getItem('deployboard.tema'); if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+</script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
   :root{
@@ -47,7 +51,10 @@
   h1,h2,h3{font-family:"IBM Plex Sans Condensed","IBM Plex Sans",sans-serif; text-wrap:balance; margin:0}
   .mono{font-family:"IBM Plex Mono", ui-monospace, monospace}
 
-  header.top{padding-block:28px 0; display:flex; flex-direction:column; gap:4px}
+  header.top{padding-block:28px 0; display:flex; flex-direction:column; gap:4px; position:relative}
+  #tema{position:absolute; top:24px; right:0}
+  @media (min-width:561px){ header.top{padding-right:140px} }
+  @media (max-width:560px){ #tema{position:static; align-self:flex-start; margin-bottom:6px} }
   .eyebrow{font-family:"IBM Plex Mono",monospace; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint)}
   h1{font-size:clamp(26px,4.2vw,36px); font-weight:700; letter-spacing:-.015em}
   .sub{color:var(--muted); font-size:14px; margin:0}
@@ -95,7 +102,7 @@
     border:1px solid var(--line); background:var(--surface); color:var(--muted)}
   .chip:hover{border-color:var(--accent); color:var(--ink)}
   .chip[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:500}
-  html:not([data-theme="light"]) .chip[aria-pressed="true"]{color:#08201f}
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .chip[aria-pressed="true"]{color:#08201f} }
   :root[data-theme="dark"] .chip[aria-pressed="true"]{color:#08201f}
   .chip:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
 
@@ -242,13 +249,15 @@
      subida): mas chico e indentado para no pelear visualmente con el encabezado del grupo. */
   tbody tr.pre-header.sub td{padding:5px 12px 5px 24px; font-size:11.5px; font-weight:500}
   .chip.pre-chip[aria-pressed="true"]{background:var(--warn); border-color:var(--warn); color:#fff}
-  html:not([data-theme="light"]) .chip.pre-chip[aria-pressed="true"]{color:#2d2311}
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .chip.pre-chip[aria-pressed="true"]{color:#2d2311} }
   :root[data-theme="dark"] .chip.pre-chip[aria-pressed="true"]{color:#2d2311}
   .tipo-cell{width:1%}
   .badge{display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:9.5px; font-weight:600; letter-spacing:.06em; padding:2px 6px; border-radius:2px; border:1px solid currentColor; cursor:help; white-space:nowrap}
   .t-sp{color:#0d6b68} .t-estructura{color:#8a5a00} .t-datos{color:#5d6f70} .t-otro{color:#8b9b9c}
-  html:not([data-theme="light"]) .t-sp{color:#43b8b0} html:not([data-theme="light"]) .t-estructura{color:#f2b63f}
-  html:not([data-theme="light"]) .t-datos{color:#93a6a6}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .t-sp{color:#43b8b0} :root:not([data-theme="light"]) .t-estructura{color:#f2b63f}
+    :root:not([data-theme="light"]) .t-datos{color:#93a6a6}
+  }
   :root[data-theme="dark"] .t-sp{color:#43b8b0} :root[data-theme="dark"] .t-estructura{color:#f2b63f}
   :root[data-theme="dark"] .t-datos{color:#93a6a6}
   .objs{display:block; font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--accent); margin-top:2px; opacity:.8}
@@ -259,7 +268,7 @@
   .btn-secundario:disabled{cursor:not-allowed; opacity:.6}
   #actualizacion{display:flex; align-items:center; gap:12px; flex-wrap:wrap; background:var(--accent-soft); border:1px solid color-mix(in srgb,var(--accent) 30%,transparent); border-radius:4px; padding:10px 14px; font-size:13px; color:var(--ink)}
   .btn-actualizar{font:inherit; font-size:12.5px; padding:6px 13px; border-radius:3px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer}
-  html:not([data-theme="light"]) .btn-actualizar{color:#08201f}
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .btn-actualizar{color:#08201f} }
   :root[data-theme="dark"] .btn-actualizar{color:#08201f}
   .btn-actualizar:hover{opacity:.9}
   .btn-actualizar:disabled{opacity:.5; cursor:not-allowed}
@@ -269,6 +278,7 @@
 <body>
 <div class="wrap">
   <header class="top">
+    <button type="button" id="tema" class="btn-secundario">Modo oscuro</button>
     <div class="eyebrow" id="eyebrow"></div>
     <h1>Antes de Subir</h1>
     <p class="sub">Qué scripts faltan, en qué ambiente, y quién los tiene que correr. Marcá lo que ya subiste y deja de contar.</p>
