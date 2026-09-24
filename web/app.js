@@ -563,7 +563,8 @@
     return '<tr class="' + (faltaEnDev(f) ? 'b' : 'subido') + (f.pre ? ' fila-pre' : '') + '">' +
       '<td class="num">' + numero + '</td>' +
       '<td class="wi">' + wiCell + '</td>' +
-      '<td class="scriptname" title="' + esc(f.arch + ((f.obj && f.obj.length) ? '\n' + f.obj.join(' · ') : '')) + '">' + esc(f.desc) + '</td>' +
+      '<td class="scriptname" title="' + esc(f.arch + ((f.obj && f.obj.length) ? '\n' + f.obj.join(' · ') : '')) + '">' + esc(f.desc) +
+        (f.origen === 'sprint' ? '<span class="nota-subida aviso">Ya está en la rama dev: el merge no lo trae, hay que ejecutarlo</span>' : '') + '</td>' +
       '<td class="tipo-cell"><span class="badge t-' + t + '" title="' + esc(TIPOS[t].ayuda) + '">' + esc(TIPOS[t].corto) + '</span><span class="acc">' + esc(f.acc || '') + '</span></td>' +
       '<td class="amb ' + claseAmb(f.est.dev) + '">' + esc(f.est.dev) + '</td>' +
       '<td class="amb ' + claseAmb(f.est.stage) + '">' + esc(f.est.stage) + '</td>' +

@@ -272,3 +272,16 @@ test('si la comparacion de ramas falla, se mide igual y se avisa', async () => {
   assert.equal(reporte.stageToDev, null);
   assert.ok(avisos.some((a) => /stage/.test(a) && /404/.test(a)), JSON.stringify(avisos));
 });
+
+test('stage -> dev suma los scripts del sprint que corrieron en stage y faltan en dev', async () => {
+  const ado = { ...adoBase(), diffEntreRamas: async () => [], descargarArchivo: async () => Buffer.from('', 'utf8'), ultimoCommitDe: async () => null };
+  const repo = [{ id: 'r1', archivo: '[B-25038] - PRE - Busqueda - ALTER.sql', wiId: 25038, fuente: 'repo', objetos: [], sondas: [], responsables: {} }];
+  const { reporte } = await medirTodo(
+    { sprint: 'S', ambientes: ['dev', 'stage'] },
+    deps({ ado, descubrirRepo: async () => repo,
+      medirAmbiente: async (scripts, amb) => Object.fromEntries(scripts.map((s) => [s.id, { estado: amb === 'stage' ? 'OK' : 'FALTA' }])) })
+  );
+  assert.equal(reporte.stageToDev.orden.length, 1);
+  assert.equal(reporte.stageToDev.orden[0].wiId, 25038);
+  assert.equal(Object.values(reporte.stageToDev.origen)[0], 'sprint');
+});

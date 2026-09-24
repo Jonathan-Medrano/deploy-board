@@ -104,6 +104,9 @@ function vistaStageToDev(reporte) {
       est,
       wiEstado: wi?.estado ?? null,
       resp: ENCARGADO_DE_EJECUTAR,
+      // rama: lo trae el merge de stage en dev. sprint: ya esta en la rama dev y el merge no lo
+      // trae, pero en la base de dev no corrio: hay que ejecutarlo a mano.
+      origen: s2d.origen?.[s.id] ?? 'rama',
     };
   });
   return { ramaStage: s2d.ramaStage, ramaDev: s2d.ramaDev, filas };

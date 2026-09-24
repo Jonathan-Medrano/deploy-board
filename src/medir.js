@@ -7,7 +7,7 @@ import { validarEscalera } from './desvios/escalera.js';
 import { construirReporte } from './reporte.js';
 import { rolesDesde } from './roles.js';
 import { unificarPersonas } from './identidades.js';
-import { medirStageToDev } from './stageToDev.js';
+import { medirStageToDev, sumarDelSprint } from './stageToDev.js';
 import { ordenarParaEjecucion } from './reconciliador/index.js';
 import { marcarEnMain } from './enMain.js';
 
@@ -140,7 +140,8 @@ export async function medirTodo(opciones = {}, deps = {}) {
     const ramaStage = env.DEPLOY_BOARD_RAMA_STAGE || undefined;
     try {
       const s2d = await medirStageToDev(ado, { repo: delRepo.repo, ramaStage, ramaDev: delRepo.rama }, { medirAmbiente: medir, env });
-      reporte.stageToDev = { ramaStage: s2d.ramaStage, ramaDev: s2d.ramaDev, orden: ordenarParaEjecucion(s2d.scripts), estados: s2d.estados };
+      const todo = sumarDelSprint(s2d, scripts, estados);
+      reporte.stageToDev = { ramaStage: todo.ramaStage, ramaDev: todo.ramaDev, orden: ordenarParaEjecucion(todo.scripts), estados: todo.estados, origen: todo.origen };
     } catch (e) {
       const causa = e.cause && (e.cause.code || e.cause.message);
       avisos.push(`No pude comparar la rama de stage contra ${delRepo.rama} (${e.message}${causa ? ': ' + causa : ''}): la pestaña stage → dev no se evaluó.`);

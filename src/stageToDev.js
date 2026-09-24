@@ -48,3 +48,32 @@ export async function medirStageToDev(ado, opciones = {}, deps = {}) {
   }
   return { ramaStage: o.ramaStage, ramaDev: o.ramaDev, scripts, estados };
 }
+
+// El merge de stage en dev no alcanza: un script que ya esta commiteado en la rama dev pero
+// solo se ejecuto en la base de stage (a mano, fuera del flujo) no viene en la diferencia de
+// ramas y aun asi falta en la base de dev. Esos salen de la medicion del sprint: OK en stage y
+// no OK en dev. Un "?" no cuenta: no se sabe, no se afirma. Lo que la rama ya trae no se repite
+// (mismo archivo, mismo contenido, o el mismo objeto del mismo work item).
+export function sumarDelSprint(deRama, scriptsDelSprint = [], estadosDelSprint = {}) {
+  const base = deRama || { ramaStage: null, ramaDev: null, scripts: [], estados: {} };
+  const clave = (x) => String(x || '').trim().toLowerCase();
+  const objetosDe = (sc) => new Set((sc.objetos || []).map((o) => clave(o.nombre)).filter(Boolean));
+  const repetido = (sc) => base.scripts.some((r) =>
+    clave(r.archivo) === clave(sc.archivo)
+    || (r.hash != null && r.hash === sc.hash)
+    || (r.wiId != null && r.wiId === sc.wiId && [...objetosDe(sc)].some((o) => objetosDe(r).has(o))));
+
+  const scripts = [...base.scripts];
+  const estados = { ...base.estados };
+  const origen = Object.fromEntries(base.scripts.map((r) => [r.id, 'rama']));
+  for (const sc of scriptsDelSprint) {
+    const est = estadosDelSprint[sc.id] || {};
+    const enStage = est.stage?.estado === 'OK';
+    const faltaEnDev = ['FALTA', 'PARCIAL'].includes(est.dev?.estado);
+    if (!enStage || !faltaEnDev || repetido(sc)) continue;
+    scripts.push(sc);
+    estados[sc.id] = est;
+    origen[sc.id] = 'sprint';
+  }
+  return { ramaStage: base.ramaStage, ramaDev: base.ramaDev, scripts, estados, origen };
+}

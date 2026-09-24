@@ -186,3 +186,15 @@ test('la pestana stage -> dev trae sus filas en orden de ejecucion, con dev y st
 test('sin medicion de stage -> dev la vista lo dice con null, no con una lista vacia', () => {
   assert.equal(construirVista(reporteBase).stageToDev, null);
 });
+
+test('cada fila de stage -> dev dice si la trae el merge o si ya esta en la rama dev', () => {
+  const v = construirVista({
+    ...reporteBase,
+    stageToDev: {
+      ramaStage: 'master', ramaDev: 'dev',
+      orden: [script({ id: 'r', archivo: 'r.sql', wiId: 1 }), script({ id: 'p', archivo: 'p.sql', wiId: 2 })],
+      estados: {}, origen: { r: 'rama', p: 'sprint' },
+    },
+  });
+  assert.deepEqual(v.stageToDev.filas.map((f) => f.origen), ['rama', 'sprint']);
+});

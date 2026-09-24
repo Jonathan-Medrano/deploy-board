@@ -103,3 +103,52 @@ test('mide cada candidato en dev y en stage', async () => {
   assert.equal(r.scripts.length, 3);
   for (const s of r.scripts) assert.deepEqual(r.estados[s.id], { dev: { estado: 'FALTA' }, stage: { estado: 'OK' } });
 });
+
+import { sumarDelSprint } from '../src/stageToDev.js';
+
+const s = (o) => ({ objetos: [], hash: null, esPre: false, ...o });
+
+test('suma del sprint lo que corrio en stage y no en dev aunque ya este en la rama dev', () => {
+  const deRama = { ramaStage: 'master', ramaDev: 'dev', scripts: [s({ id: 'r1', archivo: '[U-25155] - PRE - 01 - Columna ListingTypeMELI en Producto - ALTER.sql', wiId: 25155, hash: 'h1' })],
+    estados: { r1: { dev: { estado: 'FALTA' }, stage: { estado: 'OK' } } } };
+  const sprint = [
+    s({ id: 'a', archivo: '[B-25038] - PRE - Busqueda por codigo en sp_getselectproducts_search - ALTER.sql', wiId: 25038, hash: 'h2', objetos: [{ nombre: 'sp_getselectproducts_search' }] }),
+    s({ id: 'b', archivo: 'GetPriceWithDiscountAndDiscount.sql', wiId: 25017, hash: 'h3' }),
+    s({ id: 'c', archivo: 'ya en dev.sql', wiId: 1, hash: 'h4' }),
+    s({ id: 'd', archivo: '[fidel_ml_db] - otra base - INSERT.sql', wiId: 25155, hash: 'h5' }),
+    s({ id: 'e', archivo: 'no llego a stage.sql', wiId: 2, hash: 'h6' }),
+  ];
+  const estados = {
+    a: { dev: { estado: 'FALTA' }, stage: { estado: 'OK' } },
+    b: { dev: { estado: 'PARCIAL' }, stage: { estado: 'OK' } },
+    c: { dev: { estado: 'OK' }, stage: { estado: 'OK' } },
+    d: { dev: { estado: '?' }, stage: { estado: '?' } },
+    e: { dev: { estado: 'OK' }, stage: { estado: 'FALTA' } },
+  };
+  const r = sumarDelSprint(deRama, sprint, estados);
+  assert.deepEqual(r.scripts.map((x) => x.id), ['r1', 'a', 'b']);
+  assert.deepEqual(r.origen, { r1: 'rama', a: 'sprint', b: 'sprint' });
+  assert.deepEqual(r.estados.a, estados.a);
+  assert.deepEqual(r.estados.r1, deRama.estados.r1);
+});
+
+test('un script del sprint que es el mismo que ya trae la rama no se repite', () => {
+  const deRama = { ramaStage: 'master', ramaDev: 'dev', scripts: [
+    s({ id: 'r1', archivo: '[U-25155] - PRE - 01 - Columna ListingTypeMELI en Producto - ALTER.sql', wiId: 25155, hash: 'h1' }),
+    s({ id: 'r2', archivo: '[U-25155] - PRE - 02 - ListingTypeMELI en SP_GetProducts_ML - ALTER.sql', wiId: 25155, hash: 'h2', objetos: [{ nombre: 'SP_GetProducts_ML' }] }),
+  ], estados: {} };
+  const falta = { dev: { estado: 'FALTA' }, stage: { estado: 'OK' } };
+  const sprint = [
+    s({ id: 'mismoNombre', archivo: '[u-25155] - pre - 01 - columna listingtypemeli en producto - alter.sql', wiId: 25155, hash: 'otro' }),
+    s({ id: 'mismoHash', archivo: 'otro nombre.sql', wiId: 99, hash: 'h1' }),
+    s({ id: 'mismoObjeto', archivo: 'SP_GetProducts_ML.sql', wiId: 25155, hash: 'h9', objetos: [{ nombre: 'sp_getproducts_ml' }] }),
+  ];
+  const r = sumarDelSprint(deRama, sprint, { mismoNombre: falta, mismoHash: falta, mismoObjeto: falta });
+  assert.deepEqual(r.scripts.map((x) => x.id), ['r1', 'r2']);
+});
+
+test('sin la comparacion de ramas, igual suma lo del sprint', () => {
+  const r = sumarDelSprint(null, [s({ id: 'a', archivo: 'x.sql', wiId: 1 })], { a: { dev: { estado: 'FALTA' }, stage: { estado: 'OK' } } });
+  assert.deepEqual(r.scripts.map((x) => x.id), ['a']);
+  assert.equal(r.ramaStage, null);
+});
