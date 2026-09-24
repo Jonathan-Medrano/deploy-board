@@ -236,9 +236,9 @@ de las bases de dev y stage.
 Lo que esté puesto en el entorno de la terminal gana sobre el archivo, así se puede medir otro
 sprint sin editar nada — que es como se termina dejando una configuración de prueba puesta.
 
-`RESPONSABLE_PROMOCION` y `RESPONSABLE_PRODUCCION` son **roles, no autores**: quien ejecuta
-depende del ambiente, no de quién escribió el script. Sin configurar, el desvío sale **sin
-nombre** — nunca con uno inventado.
+Quien ejecuta depende del ambiente, no de quién escribió el script. Lo que falta en el destino
+de una promoción va al rol **"Encargado de ejecutar scripts"**, fijo. `RESPONSABLE_PRODUCCION`
+sigue siendo configurable: sin configurar, el desvío sale **sin nombre** — nunca con uno inventado.
 
 ⚠️ La password viaja como argumento de `sqlcmd`, así que es visible en la lista de procesos
 del sistema mientras dura cada consulta. Es inherente a usar `sqlcmd`, no un descuido: no

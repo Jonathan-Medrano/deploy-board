@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectarDesvios } from '../../src/desvios/reglas.js';
-import { rolesDesde } from '../../src/roles.js';
+import { rolesDesde, ENCARGADO_DE_EJECUTAR } from '../../src/roles.js';
 
 // El helper trae un nombre VALIDO a proposito: si no, D11 dispararia en los 22 tests y
 // taparia lo que cada uno quiere medir.
@@ -400,11 +400,11 @@ test('D12 sin `creado` en el adjunto medido: no se afirma "mas reciente" porque 
   assert.doesNotMatch(d12.detalle, /mas reciente/);
 });
 
-test('rolesDesde lee la configuracion y no inventa nombres', () => {
-  assert.deepEqual(rolesDesde({ RESPONSABLE_PROMOCION: 'Ana', RESPONSABLE_PRODUCCION: 'Deploy' }),
-    { promocion: 'Ana', produccion: 'Deploy' });
-  assert.deepEqual(rolesDesde({}), { promocion: null, produccion: null });
-  assert.deepEqual(rolesDesde({ RESPONSABLE_PROMOCION: '' }), { promocion: null, produccion: null });
+test('lo que falta en el destino de la promocion lo tiene el rol, no una persona del .env', () => {
+  assert.deepEqual(rolesDesde({ RESPONSABLE_PROMOCION: 'Juani', RESPONSABLE_PRODUCCION: 'Deploy' }),
+    { promocion: ENCARGADO_DE_EJECUTAR, produccion: 'Deploy' });
+  assert.deepEqual(rolesDesde({}), { promocion: ENCARGADO_DE_EJECUTAR, produccion: null });
+  assert.equal(ENCARGADO_DE_EJECUTAR, 'Encargado de ejecutar scripts');
 });
 
 test('D3 no dispara si el destino no se midio: no se afirma lo que no se pregunto', () => {
