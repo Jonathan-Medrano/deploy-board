@@ -79,3 +79,30 @@ test('acepta AZURE_ORG_URL, que es el nombre que ya usa el equipo', async () => 
   await c.getWorkItems([1]);
   assert.match(url, /dev\.azure\.com\/agenciap/);
 });
+
+test('una lectura que se corta a nivel de red se reintenta una vez', async () => {
+  // Medido el 2026-09-24: sqlcmd es sincronico y bloquea el proceso decenas de segundos;
+  // Azure cierra la conexion que node tenia abierta, y el primer pedido despues de medir las
+  // bases fallaba con "fetch failed" (la lista de estados y la comparacion stage -> dev).
+  let llamadas = 0;
+  const fake = async () => {
+    llamadas++;
+    if (llamadas === 1) throw new TypeError('fetch failed');
+    return { ok: true, status: 200, json: async () => ({ value: [{ name: 'Active' }] }) };
+  };
+  const c = crearClienteAdo(env, { fetch: fake });
+  assert.deepEqual(await c.listarEstados('User Story'), ['Active']);
+  assert.equal(llamadas, 2);
+});
+
+test('si la red falla dos veces seguidas, el error sale', async () => {
+  const c = crearClienteAdo(env, { fetch: async () => { throw new TypeError('fetch failed'); } });
+  await assert.rejects(() => c.listarEstados('User Story'), /fetch failed/);
+});
+
+test('una escritura NO se reintenta: podria aplicarse dos veces', async () => {
+  let llamadas = 0;
+  const c = crearClienteAdo(env, { fetch: async () => { llamadas++; throw new TypeError('fetch failed'); } });
+  await assert.rejects(() => c.setEstado(1, 'Active'), /fetch failed/);
+  assert.equal(llamadas, 1);
+});

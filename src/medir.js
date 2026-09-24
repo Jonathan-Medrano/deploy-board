@@ -7,6 +7,8 @@ import { validarEscalera } from './desvios/escalera.js';
 import { construirReporte } from './reporte.js';
 import { rolesDesde } from './roles.js';
 import { unificarPersonas } from './identidades.js';
+import { medirStageToDev } from './stageToDev.js';
+import { ordenarParaEjecucion } from './reconciliador/index.js';
 import { marcarEnMain } from './enMain.js';
 
 export const OPCIONES_POR_DEFECTO = { ambientes: ['dev', 'stage'], destino: 'stage' };
@@ -129,6 +131,21 @@ export async function medirTodo(opciones = {}, deps = {}) {
     roles,
     enMain, ramaMain: ramaMainUsada,
   });
+
+  // El pase stage -> dev va aparte del sprint: compara las ramas, no una carpeta. Que falle no
+  // puede tumbar la medicion del sprint, pero tampoco pasar callado — una pestaña vacia se lee
+  // como "dev esta al dia".
+  reporte.stageToDev = null;
+  if (ado.diffEntreRamas) {
+    const ramaStage = env.DEPLOY_BOARD_RAMA_STAGE || undefined;
+    try {
+      const s2d = await medirStageToDev(ado, { repo: delRepo.repo, ramaStage, ramaDev: delRepo.rama }, { medirAmbiente: medir, env });
+      reporte.stageToDev = { ramaStage: s2d.ramaStage, ramaDev: s2d.ramaDev, orden: ordenarParaEjecucion(s2d.scripts), estados: s2d.estados };
+    } catch (e) {
+      const causa = e.cause && (e.cause.code || e.cause.message);
+      avisos.push(`No pude comparar la rama de stage contra ${delRepo.rama} (${e.message}${causa ? ': ' + causa : ''}): la pestaña stage → dev no se evaluó.`);
+    }
+  }
 
   // Lo que no se midio se dice: sin estos avisos, una lista sin D3/D4 se lee como "no falta
   // ningun PRE" cuando en realidad no se pregunto. Cuando el destino ES stage, D3 y D4 dependen

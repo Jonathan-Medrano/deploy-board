@@ -248,3 +248,27 @@ test('si no se pueden leer los autores, se mide igual y se avisa', async () => {
   assert.ok(reporte);
   assert.ok(avisos.some((a) => /autores/.test(a) && /500/.test(a)), JSON.stringify(avisos));
 });
+
+test('la medicion trae el pase stage -> dev comparando master contra dev, sin depender del sprint', async () => {
+  const pedidos = [];
+  const ado = {
+    ...adoBase(),
+    diffEntreRamas: async (repo, base, target) => { pedidos.push([repo, base, target]); return [
+      { changeType: 'add', item: { path: '/Api/DB_Migrations/Sprint_2026_09_02/US-25155_MELI/[U-25155] - PRE - 01 - Columna - ALTER.sql' } },
+    ]; },
+    descargarArchivo: async () => Buffer.from('ALTER TABLE [dbo].[Producto] ADD [X] BIT NULL', 'utf8'),
+    ultimoCommitDe: async () => null,
+  };
+  const { reporte } = await medirTodo({ ambientes: [] }, deps({ ado }));
+  assert.deepEqual(pedidos, [['Api.Net', 'dev', 'master']]);
+  assert.equal(reporte.stageToDev.orden.length, 1);
+  assert.equal(reporte.stageToDev.orden[0].wiId, 25155);
+});
+
+test('si la comparacion de ramas falla, se mide igual y se avisa', async () => {
+  const ado = { ...adoBase(), diffEntreRamas: async () => { throw new Error('404'); } };
+  const { reporte, avisos } = await medirTodo({ ambientes: [] }, deps({ ado }));
+  assert.ok(reporte);
+  assert.equal(reporte.stageToDev, null);
+  assert.ok(avisos.some((a) => /stage/.test(a) && /404/.test(a)), JSON.stringify(avisos));
+});

@@ -29,32 +29,39 @@ export async function descubrirRepoEnAdo(ado, { sprint, repo = REPO_POR_DEFECTO,
 
   const out = [];
   for (const c of candidatos) {
-    const nombre = c.partes[c.partes.length - 1];
-    const carpetaWi = c.partes[0];
-    const numCarpeta = /(\d+)/.exec(carpetaWi);
-    // El nombre del SP queda como viene en el archivo; el reconciliador lo compara sin
-    // mayusculas contra los modulos que define el adjunto.
-    const deNew = esVersionNueva(nombre) ? { esNew: true, nombreSp: nombre.replace(/__NEW\.sql$/i, '') } : {};
-    try {
-      const buf = await ado.descargarArchivo(repo, c.ruta, rama);
-      out.push(armarScriptParcial(nombre, decodificar(buf), 'repo', {
-        carpeta: carpetaWi,
-        responsables: { commiteoEnElRepo: await ado.ultimoCommitDe(repo, c.ruta) },
-        wiIdFallback: numCarpeta ? Number(numCarpeta[1]) : null,
-        ...deNew,
-      }));
-    } catch (e) {
-      // Un archivo ilegible es UN script sin veredicto, no un barrido caido. Y el NOMBRE
-      // sigue siendo legible: nulear wiId/esPre/accion fabricaba desvios falsos sobre un
-      // archivo bien nombrado. Solo se pierde lo que el contenido ilegible realmente niega.
-      out.push({
-        ...parsearNombre(nombre),
-        id: `ilegible/${carpetaWi}/${nombre}`,
-        objetos: [], sql: '', fuente: 'repo', carpeta: carpetaWi, responsables: {},
-        hash: null, ...deNew,
-        sondas: [{ id: 's0', tipo: 'sin_sonda', detalle: `no pude bajar ${nombre}: ${e.message}` }],
-      });
-    }
+    out.push(await leerScriptDelRepo(ado, { repo, rama, ruta: c.ruta, carpetaWi: c.partes[0] }, { decodificarSql: decodificar }));
   }
   return out;
+}
+
+// Un .sql del repo, bajado de UNA rama puntual, listo para reconciliar y sondear. Lo usan el
+// lado repo del sprint (rama dev) y el pase stage -> dev (rama de stage): la misma lectura en
+// dos lugares se desincroniza en el primer arreglo.
+export async function leerScriptDelRepo(ado, { repo = REPO_POR_DEFECTO, rama = RAMA_POR_DEFECTO, ruta, carpetaWi }, deps = {}) {
+  const decodificar = deps.decodificarSql || decodificarSql;
+  const nombre = ruta.split('/').pop();
+  const numCarpeta = /(\d+)/.exec(carpetaWi || '');
+  // El nombre del SP queda como viene en el archivo; el reconciliador lo compara sin
+  // mayusculas contra los modulos que define el adjunto.
+  const deNew = esVersionNueva(nombre) ? { esNew: true, nombreSp: nombre.replace(/__NEW\.sql$/i, '') } : {};
+  try {
+    const buf = await ado.descargarArchivo(repo, ruta, rama);
+    return armarScriptParcial(nombre, decodificar(buf), 'repo', {
+      carpeta: carpetaWi,
+      responsables: { commiteoEnElRepo: await ado.ultimoCommitDe(repo, ruta, rama) },
+      wiIdFallback: numCarpeta ? Number(numCarpeta[1]) : null,
+      ...deNew,
+    });
+  } catch (e) {
+    // Un archivo ilegible es UN script sin veredicto, no un barrido caido. Y el NOMBRE
+    // sigue siendo legible: nulear wiId/esPre/accion fabricaba desvios falsos sobre un
+    // archivo bien nombrado. Solo se pierde lo que el contenido ilegible realmente niega.
+    return {
+      ...parsearNombre(nombre),
+      id: `ilegible/${carpetaWi}/${nombre}`,
+      objetos: [], sql: '', fuente: 'repo', carpeta: carpetaWi, responsables: {},
+      hash: null, ...deNew,
+      sondas: [{ id: 's0', tipo: 'sin_sonda', detalle: `no pude bajar ${nombre}: ${e.message}` }],
+    };
+  }
 }

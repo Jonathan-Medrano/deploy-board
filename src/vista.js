@@ -1,5 +1,6 @@
 import { responsableDe } from './reporte.js';
 import { subidaDe } from './desvios/reglas.js';
+import { ENCARGADO_DE_EJECUTAR } from './roles.js';
 
 // Que DEFINE un script decide como se lee y en que orden se mira. Un SP se reemplaza entero y
 // es barato de repetir; una columna o una tabla cambian la forma de la base y no se deshacen
@@ -78,5 +79,32 @@ export function construirVista(reporte, extra = {}) {
     personas: reporte.pendientesPorResponsable,
     revisar: reporte.revisarAMano,
     sinVeredicto: reporte.sinVeredicto || [],
+    stageToDev: vistaStageToDev(reporte),
   };
+}
+
+// La pestaña stage -> dev: lo que la rama de stage tiene y dev no. Lo ejecuta el encargado,
+// igual que cualquier promocion. null = no se evaluo (la pantalla lo dice), no "no falta nada".
+function vistaStageToDev(reporte) {
+  const s2d = reporte.stageToDev;
+  if (!s2d) return null;
+  const filas = (s2d.orden || []).map((s) => {
+    const est = {};
+    for (const amb of ['dev', 'stage']) est[amb] = s2d.estados?.[s.id]?.[amb]?.estado ?? '-';
+    const wi = (reporte.wis || []).find((w) => w.id === s.wiId) || null;
+    return {
+      id: s.id,
+      arch: s.archivo,
+      wi: s.wiId ?? null,
+      pre: !!s.esPre,
+      acc: s.accion ?? null,
+      desc: s.descripcion || s.archivo,
+      tipo: tipoDeScript(s),
+      obj: [...new Set((s.objetos || []).map((o) => o.nombre).filter(Boolean))],
+      est,
+      wiEstado: wi?.estado ?? null,
+      resp: ENCARGADO_DE_EJECUTAR,
+    };
+  });
+  return { ramaStage: s2d.ramaStage, ramaDev: s2d.ramaDev, filas };
 }

@@ -84,6 +84,14 @@
 
   #contenido{display:flex; flex-direction:column; gap:20px}
   #contenido[hidden]{display:none}
+  /* stage -> dev no depende del sprint: lo que es del sprint se esconde y el selector se
+     atenua con la aclaracion, para que nadie crea que cambiar de sprint cambia esta lista. */
+  #contenido.modo-s2d > .contadores, #contenido.modo-s2d > #secPersonas, #contenido.modo-s2d > #secRevisar,
+  #contenido.modo-s2d #estados, #contenido.modo-s2d #filtros, #contenido.modo-s2d > #avisoDesfasado,
+  #contenido.modo-s2d > #avisoCarpeta{display:none}
+  #contenido.modo-s2d .selector-sprint label{opacity:.4}
+  .nota-s2d{display:none; font-size:12px; color:var(--faint)}
+  #contenido.modo-s2d .nota-s2d{display:inline}
   /* Lo de abajo es de OTRO sprint mientras no se mida el elegido: atenuado para que no se lea
      como si fuera del sprint que estas mirando en el selector. */
   #contenido.desfasado > .veredicto, #contenido.desfasado > .contadores, #contenido.desfasado > .seccion{opacity:.35; filter:grayscale(1)}
@@ -196,13 +204,14 @@
   .personas{display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:10px; align-items:start}
   .persona{background:var(--surface); border:1px solid var(--line); border-radius:4px}
   .persona[open]{grid-column:1 / -1}
-  .persona > summary{display:flex; align-items:baseline; gap:10px; padding:11px 14px; cursor:pointer; list-style:none}
+  .persona > summary{display:grid; grid-template-columns:10px minmax(0,1fr); column-gap:10px; row-gap:3px; align-items:baseline; padding:11px 14px; cursor:pointer; list-style:none}
   .persona > summary::-webkit-details-marker{display:none}
-  .persona > summary::before{content:'\25B8'; font-size:11px; color:var(--faint); width:10px; flex:none}
+  .persona > summary::before{content:'\25B8'; font-size:11px; color:var(--faint); grid-row:1}
   .persona[open] > summary::before{content:'\25BE'}
   .persona > summary:hover h3{color:var(--accent)}
   .persona > summary:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
-  .persona h3{font-size:15px; font-weight:600; flex:1; min-width:0}
+  .persona h3{font-size:15px; font-weight:600; line-height:1.3; min-width:0; overflow-wrap:anywhere}
+  .persona > summary .cuenta{grid-column:2; white-space:normal}
   .persona h3.nadie{color:var(--faint); font-style:italic; font-weight:500}
   .cuenta{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--faint); white-space:nowrap}
   .cuenta .bloq{color:var(--bad); font-weight:600}
@@ -333,10 +342,12 @@
       <div class="olas" id="olas" role="group" aria-label="Qué subida estás preparando">
         <button type="button" class="ola" data-ola="stage" aria-pressed="true">stage → main</button>
         <button type="button" class="ola" data-ola="dev" aria-pressed="false">dev → stage → main</button>
+        <button type="button" class="ola" data-ola="stagedev" aria-pressed="false">stage → dev</button>
       </div>
       <div class="selector-sprint" id="selectorSprint">
         <label>Sprint <select id="selSprint"></select></label>
         <label>Carpeta <select id="selCarpeta"></select></label>
+        <span class="nota-s2d">no depende del sprint: compara las ramas</span>
       </div>
     </div>
     <p id="avisoCarpeta" hidden></p>

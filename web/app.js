@@ -26,6 +26,7 @@
       ignorados: leerPref('deployboard.abre.ignorados', false),
       cerrados:  leerPref('deployboard.abre.cerrados', false),
       pausados:  leerPref('deployboard.abre.pausados', false),
+      s2dCorridos: leerPref('deployboard.abre.s2dCorridos', false),
     },
   };
 
@@ -238,6 +239,10 @@
   function pintarCabecera(){
     var el = document.getElementById('cabecera');
     if (!el) return;
+    if (estado.ola === 'stagedev') {
+      el.innerHTML = '<th>#</th><th>Work item</th><th>Script</th><th>Tipo</th><th>DEV</th><th>STAGE</th><th>Responsable</th>';
+      return;
+    }
     el.innerHTML = '<th>#</th><th>Work item</th><th>Script</th><th>Tipo</th>' +
       D.meta.ambientes.map(function(a){ return '<th>' + esc(a.toUpperCase()) + '</th>'; }).join('') +
       '<th>main</th><th>Responsable</th>';
@@ -517,7 +522,82 @@
     }).join('');
   }
 
-  function pintarTodo(){ pintarResumen(); pintarTabla(); pintarPersonas(); }
+  function pintarTodo(){
+    document.getElementById('contenido').classList.toggle('modo-s2d', estado.ola === 'stagedev');
+    pintarCabecera();
+    if (estado.ola === 'stagedev') { pintarResumenS2D(); pintarTablaS2D(); return; }
+    pintarResumen(); pintarTabla(); pintarPersonas();
+  }
+
+  /* ---------------- stage -> dev ---------------- */
+  /* Lo que la rama de stage tiene y dev no, sea del sprint que sea. Lo que ya corrio en la base
+     de dev llega con el merge y no hay que ejecutarlo: va aparte y plegado. */
+  var COLS_S2D = 7;
+  function faltaEnDev(f){ return f.est.dev !== 'OK'; }
+
+  function pintarResumenS2D(){
+    var s2d = D.stageToDev;
+    var v = document.getElementById('veredicto');
+    document.getElementById('ademas').hidden = true;
+    if (!s2d) {
+      v.classList.remove('ok');
+      document.getElementById('vnum').textContent = '?';
+      document.getElementById('vtit').textContent = 'No se evaluó';
+      document.getElementById('vsub').textContent = 'Esta medición no comparó las ramas: apretá "Volver a medir".';
+      return;
+    }
+    var faltan = s2d.filas.filter(faltaEnDev).length;
+    v.classList.toggle('ok', faltan === 0);
+    document.getElementById('vnum').textContent = faltan;
+    document.getElementById('vtit').textContent = faltan ? 'Faltan en dev' : 'dev está al día con stage';
+    document.getElementById('vsub').textContent = faltan
+      ? (faltan === 1 ? '1 script de ' : faltan + ' scripts de ') + s2d.ramaStage + ' falta' + (faltan === 1 ? '' : 'n') + ' por ejecutar en dev'
+      : 'nada de lo que está en ' + s2d.ramaStage + ' falta en la base de dev';
+  }
+
+  function filaS2D(f, numero){
+    var wiCell = !f.wi ? '<span class="sinvinc">sin vincular</span>'
+      : (ORG ? '<a class="wilink" href="' + ORG + f.wi + '" target="_blank" rel="noopener"><b>' + f.wi + '</b>' + (f.wiEstado ? '<em>' + esc(f.wiEstado) + '</em>' : '') + '</a>'
+             : '<span class="sinvinc"><b>' + f.wi + '</b></span>');
+    var t = f.tipo || 'otro';
+    return '<tr class="' + (faltaEnDev(f) ? 'b' : 'subido') + (f.pre ? ' fila-pre' : '') + '">' +
+      '<td class="num">' + numero + '</td>' +
+      '<td class="wi">' + wiCell + '</td>' +
+      '<td class="scriptname" title="' + esc(f.arch + ((f.obj && f.obj.length) ? '\n' + f.obj.join(' · ') : '')) + '">' + esc(f.desc) + '</td>' +
+      '<td class="tipo-cell"><span class="badge t-' + t + '" title="' + esc(TIPOS[t].ayuda) + '">' + esc(TIPOS[t].corto) + '</span><span class="acc">' + esc(f.acc || '') + '</span></td>' +
+      '<td class="amb ' + claseAmb(f.est.dev) + '">' + esc(f.est.dev) + '</td>' +
+      '<td class="amb ' + claseAmb(f.est.stage) + '">' + esc(f.est.stage) + '</td>' +
+      '<td class="resp">' + esc(f.resp) + '</td>' +
+    '</tr>';
+  }
+
+  function pintarTablaS2D(){
+    var s2d = D.stageToDev;
+    var filas = s2d ? s2d.filas : [];
+    var faltan = filas.filter(faltaEnDev);
+    var corridos = filas.filter(function(f){ return !faltaEnDev(f); });
+    var pre = faltan.filter(function(f){ return f.pre; });
+    var resto = faltan.filter(function(f){ return !f.pre; });
+    var num = 0, html = '';
+    if (pre.length) {
+      html += '<tr class="pre-header antes"><td colspan="' + COLS_S2D + '">⚠ ANTES del deploy (PRE) · ' + pre.length + '</td></tr>' +
+        pre.map(function(f){ num++; return filaS2D(f, String(num)); }).join('');
+      if (resto.length) html += '<tr class="pre-header despues"><td colspan="' + COLS_S2D + '">Después del deploy · ' + resto.length + '</td></tr>';
+    }
+    html += resto.map(function(f){ num++; return filaS2D(f, String(num)); }).join('');
+    if (corridos.length) {
+      var abierto = !!estado.abiertos.s2dCorridos;
+      html += '<tr class="sep"><td colspan="' + COLS_S2D + '">' +
+        '<button type="button" class="toggle" data-g="s2dCorridos" aria-expanded="' + abierto + '">' +
+        '<span class="chev">' + (abierto ? '▾' : '▸') + '</span>Ya corrieron en dev · llegan con el merge · ' + corridos.length +
+        '<span class="hint">' + (abierto ? 'ocultar' : 'mostrar') + '</span></button></td></tr>';
+      if (abierto) html += corridos.map(function(f){ return filaS2D(f, '✓'); }).join('');
+    }
+    tbody.innerHTML = html;
+    var vacio = document.getElementById('sinFilas');
+    vacio.textContent = s2d ? 'Nada de lo que está en ' + s2d.ramaStage + ' falta en dev.' : 'No se comparó stage contra dev en esta medición.';
+    vacio.hidden = filas.length > 0;
+  }
 
   function pintarFiltros(){
     var nombres = [];
@@ -630,7 +710,7 @@
       var g = t.dataset.g;
       estado.abiertos[g] = !estado.abiertos[g];
       guardarPref('deployboard.abre.' + g, estado.abiertos[g]);
-      pintarTabla();
+      if (estado.ola === 'stagedev') pintarTablaS2D(); else pintarTabla();
       return;
     }
 

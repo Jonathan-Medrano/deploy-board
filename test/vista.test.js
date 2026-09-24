@@ -160,3 +160,29 @@ test('cada fila proyecta subida (cerrado/pausado/null), enRepo y wiFuera', () =>
   assert.equal(f.c.wiFuera, true);
   assert.equal(f.p.wiFuera, false);
 });
+
+test('la pestana stage -> dev trae sus filas en orden de ejecucion, con dev y stage, y a cargo del rol', () => {
+  const v = construirVista({
+    ...reporteBase,
+    stageToDev: {
+      ramaStage: 'master', ramaDev: 'dev',
+      orden: [
+        script({ id: 'p1', archivo: '[U-25155] - PRE - 01 - Columna - ALTER.sql', wiId: 25155, esPre: true, accion: 'ALTER', descripcion: 'Columna',
+          objetos: [{ tipo: 'COLUMN', nombre: 'ListingTypeMELI' }] }),
+      ],
+      estados: { p1: { dev: { estado: 'FALTA' }, stage: { estado: 'OK' } } },
+    },
+  });
+  assert.equal(v.stageToDev.ramaStage, 'master');
+  assert.equal(v.stageToDev.ramaDev, 'dev');
+  assert.equal(v.stageToDev.filas.length, 1);
+  const f = v.stageToDev.filas[0];
+  assert.deepEqual(f.est, { dev: 'FALTA', stage: 'OK' });
+  assert.equal(f.pre, true);
+  assert.equal(f.wi, 25155);
+  assert.equal(f.resp, 'Encargado de ejecutar scripts');
+});
+
+test('sin medicion de stage -> dev la vista lo dice con null, no con una lista vacia', () => {
+  assert.equal(construirVista(reporteBase).stageToDev, null);
+});

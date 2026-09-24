@@ -14,11 +14,19 @@ export function crearClienteAdo(env = process.env, deps = {}) {
   const auth = 'Basic ' + Buffer.from(':' + pat).toString('base64');
 
   // El mensaje de error nunca incluye el cuerpo del request ni la cabecera: ahi viaja el PAT.
+  // sqlcmd es sincronico y bloquea el proceso decenas de segundos mientras mide las bases; en ese
+  // rato Azure cierra la conexion que node tenia abierta, y el primer pedido de despues salia con
+  // "fetch failed" sin haber llegado a Azure. Una lectura se reintenta una vez; una escritura
+  // (PATCH) no, porque podria haberse aplicado y repetirla la aplicaria dos veces.
   async function api(url, opts = {}) {
-    const res = await http(url, {
-      ...opts,
-      headers: { Authorization: auth, 'Content-Type': 'application/json', ...(opts.headers || {}) },
-    });
+    const pedido = { ...opts, headers: { Authorization: auth, 'Content-Type': 'application/json', ...(opts.headers || {}) } };
+    let res;
+    try {
+      res = await http(url, pedido);
+    } catch (e) {
+      if (String(opts.method || 'GET').toUpperCase() === 'PATCH') throw e;
+      res = await http(url, pedido);
+    }
     if (!res.ok) throw new Error(`Azure ${res.status} ${res.statusText} en ${url.split('?')[0]}`);
     return res;
   }
@@ -108,9 +116,10 @@ export function crearClienteAdo(env = process.env, deps = {}) {
   // Quien commiteo el archivo. Es el responsable a nombrar cuando el script esta en el repo
   // y no esta adjunto en la tarjeta: es el que tiene que subirlo. Un fallo no es un error del
   // barrido — devuelve null y el desvio sale sin nombre, nunca con uno inventado.
-  async function ultimoCommitDe(repo, ruta) {
+  async function ultimoCommitDe(repo, ruta, rama) {
     try {
       const url = `${git(repo)}/commits?searchCriteria.itemPath=${encodeURIComponent(ruta)}` +
+        (rama ? `&searchCriteria.itemVersion.version=${encodeURIComponent(rama)}` : '') +
         `&searchCriteria.$top=1&${API}`;
       const c = (((await (await api(url)).json()).value) || [])[0];
       if (!c || !c.author) return null;
@@ -118,6 +127,22 @@ export function crearClienteAdo(env = process.env, deps = {}) {
     } catch {
       return null;
     }
+  }
+
+  // Lo que la rama `target` tiene y `base` no: la diferencia contra el ancestro comun, que es
+  // exactamente lo que un merge de target en base va a traer. Carpetas incluidas; filtra quien llama.
+  async function diffEntreRamas(repo, base, target) {
+    const out = [];
+    const top = 2000;
+    for (let skip = 0; ; skip += top) {
+      const url = `${git(repo)}/diffs/commits?baseVersion=${encodeURIComponent(base)}&baseVersionType=branch` +
+        `&targetVersion=${encodeURIComponent(target)}&targetVersionType=branch&$top=${top}&$skip=${skip}&${API}`;
+      const r = await (await api(url)).json();
+      const cambios = r.changes || [];
+      out.push(...cambios);
+      if (r.allChangesIncluded !== false || !cambios.length) break;
+    }
+    return out;
   }
 
   // Todas las firmas (nombre + mail) que dejaron commits en la carpeta. No es para nombrar a
@@ -155,6 +180,6 @@ export function crearClienteAdo(env = process.env, deps = {}) {
 
   return {
     wiql, getWorkItems, descargarAdjunto, quienSubioCadaAdjunto, setEstado, setCampos, listarEstados,
-    listarArchivos, descargarArchivo, ultimoCommitDe, autoresDe, listarIteraciones,
+    listarArchivos, descargarArchivo, ultimoCommitDe, autoresDe, diffEntreRamas, listarIteraciones,
   };
 }
