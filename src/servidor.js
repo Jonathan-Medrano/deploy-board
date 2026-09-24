@@ -9,6 +9,7 @@ import { crearAlmacen } from './almacen.js';
 import { aplicarCambio } from './marcas.js';
 import { estadoDelRepo, traerCambios } from './actualizador.js';
 import { sprintsDisponibles } from './sprints-ado.js';
+import { fechaLocal } from './fecha.js';
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
 export const RAIZ = path.join(AQUI, '..');
@@ -51,10 +52,21 @@ export function quienSoy(deps = {}) {
   }
 }
 
+// Lo elegido en pantalla pisa al .env. La carpeta se distingue en tres casos: la pantalla no
+// dijo nada (no viene la clave) => la del .env; eligio una => esa; eligio NINGUNA (null o
+// vacia) => sin repo. Antes el tercer caso caia al .env, y un sprint de octubre se comparaba
+// contra la carpeta de septiembre: todo salia D5/D6 mientras la pantalla decia "sin repo".
+export function opcionesPedidas(opciones, eleccion = {}) {
+  const pedidas = { ...opciones };
+  if (eleccion.iteracion) pedidas.iteracion = eleccion.iteracion;
+  if (Object.prototype.hasOwnProperty.call(eleccion, 'sprint')) pedidas.sprint = eleccion.sprint || null;
+  return pedidas;
+}
+
 export function crearManejador({
   almacen, medir, opciones, quien = null,
   listarSprints = async () => ({ iteraciones: [], carpetas: [] }),
-  hoy = () => new Date().toISOString().slice(0, 10),
+  hoy = () => fechaLocal(),
   leerEstatico,
   actualizador = { estado: estadoDelRepo, traer: traerCambios },
   alReiniciar = () => {},
@@ -159,11 +171,7 @@ async function leerCuerpo(req) {
 export function crearServidor({ opciones, env = process.env, raiz = RAIZ } = {}) {
   const almacen = crearAlmacen(env, raiz);
   const medir = async (eleccion = {}) => {
-    // Lo elegido en pantalla pisa al .env, pero solo lo que vino: un select vacio no puede
-    // borrar la configuracion de base.
-    const pedidas = { ...opciones };
-    if (eleccion.iteracion) pedidas.iteracion = eleccion.iteracion;
-    if (eleccion.sprint) pedidas.sprint = eleccion.sprint;
+    const pedidas = opcionesPedidas(opciones, eleccion);
     const { reporte, avisos, opciones: usadas } = await medirTodo(pedidas, { env });
     const vista = construirVista(reporte, {
       org: env.AZURE_ORG || env.AZURE_ORG_URL || null,

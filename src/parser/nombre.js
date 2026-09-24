@@ -16,11 +16,17 @@ export function parsearNombre(archivo) {
 
   const partes = con[3].split(' - ').map((s) => s.trim()).filter(Boolean);
 
+  // El equipo escribe PRE en dos posiciones: antes del NN ("PRE - 01 - Desc") o justo
+  // despues ("01 - PRE - Desc") — medido en los 5 scripts de la US-24994. Se acepta en
+  // cualquiera de las dos, nunca en medio de la descripcion: solo cuenta si la parte ES
+  // "pre" entera (case-insensitive, sin espacios), asi "Precio de lista" no dispara esto.
   let esPre = false;
   if (partes[0] && partes[0].toUpperCase() === 'PRE') { esPre = true; partes.shift(); }
 
   let orden = null;
   if (partes[0] && /^\d{1,2}$/.test(partes[0])) orden = Number(partes.shift());
+
+  if (!esPre && partes[0] && partes[0].toUpperCase() === 'PRE') { esPre = true; partes.shift(); }
 
   let accion = null;
   if (partes.length > 1 && ACCIONES.has(partes[partes.length - 1].toUpperCase())) {

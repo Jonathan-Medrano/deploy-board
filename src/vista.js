@@ -1,4 +1,5 @@
 import { responsableDe } from './reporte.js';
+import { subidaDe } from './desvios/reglas.js';
 
 // Que DEFINE un script decide como se lee y en que orden se mira. Un SP se reemplaza entero y
 // es barato de repetir; una columna o una tabla cambian la forma de la base y no se deshacen
@@ -41,6 +42,16 @@ export function construirVista(reporte, extra = {}) {
       wiEstado: wi?.estado ?? null,
       wiTit: wi?.titulo ?? null,
       resp: responsableDe(s, reporte.wis),
+      // 'igual' | 'distinta' | null. Null no es "no llego a main": puede ser que no se haya
+      // evaluado (sin sprint elegido, o la lectura de main fallo) — eso lo dice meta.ramaMain.
+      main: reporte.enMain?.[s.id] ?? null,
+      // 'cerrado' | 'pausado' | null: los dos primeros no van en la subida y la pantalla los
+      // aparta. Sale de la misma regla que apaga D2/D3/D4, para que no se contradigan.
+      subida: subidaDe(wi),
+      // Un cerrado sin copia en el repo no se puede confirmar contra main: nunca se commiteo.
+      enRepo: (s.fuentes || []).includes('repo'),
+      // El work item no es de este sprint: se trajo aparte porque el script lo nombra.
+      wiFuera: !!wi?.fueraDelSprint,
     };
   });
 
@@ -58,6 +69,9 @@ export function construirVista(reporte, extra = {}) {
       wiBase: org && proyecto ? `${String(org).replace(/\/+$/, '')}/${proyecto}/_workitems/edit/` : null,
       medido, sprint, iteracion, comando, porTipo,
       total: filas.length,
+      // Rama que se leyo para "Ya en rama MAIN", o null si no se evaluo. La pantalla la usa
+      // para explicar por que una fila no tiene badge en vez de dejarlo mudo.
+      ramaMain: reporte.ramaMain ?? null,
     },
     filas,
     desvios: reporte.desvios,

@@ -60,7 +60,7 @@ set "DESTINO=%~dp0deploy-board"
 echo.
 echo   [2/4] Bajando el sistema...
 
-if exist "%DESTINO%.git" (
+if exist "%DESTINO%\.git" (
   echo         Ya estaba instalado. Actualizando...
   git -C "%DESTINO%" pull --ff-only
   if errorlevel 1 (
@@ -110,21 +110,21 @@ echo   [3/4] Dejando el acceso directo en el Escritorio...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$d=[Environment]::GetFolderPath('Desktop');" ^
   "$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $d 'deploy-board.lnk'));" ^
-  "$s.TargetPath='%DESTINO%iniciar.bat';" ^
+  "$s.TargetPath='%DESTINO%\iniciar.bat';" ^
   "$s.WorkingDirectory='%DESTINO%';" ^
   "$s.Description='Antes de subir: que scripts faltan y quien los corre';" ^
   "$s.Save()"
 if errorlevel 1 (
   echo         [!] No pude crear el acceso directo. Abrilo a mano desde:
-  echo             %DESTINO%iniciar.bat
+  echo             %DESTINO%\iniciar.bat
 ) else (
   echo         Listo: "deploy-board" en el Escritorio.
 )
 
 echo.
 echo   [4/4] Preparando la configuracion...
-if not exist "%DESTINO%.env" (
-  copy /y "%DESTINO%.env.example" "%DESTINO%.env" >nul
+if not exist "%DESTINO%\.env" (
+  copy /y "%DESTINO%\.env.example" "%DESTINO%\.env" >nul
   echo         Se creo el archivo .env a partir del ejemplo.
 ) else (
   echo         Ya tenias un .env: no lo toque.
@@ -137,7 +137,7 @@ echo.
 echo   FALTA UN PASO y sin esto no mide nada:
 echo.
 echo     Abrir este archivo y completar las claves:
-echo       %DESTINO%.env
+echo       %DESTINO%\.env
 echo.
 echo     Son AZURE_PAT y las credenciales de la base.
 echo     Pedilas por el canal del equipo - no estan en el repo
@@ -149,7 +149,7 @@ echo.
 
 choice /c SN /n /m "   Abro el .env ahora para completarlo? [S/N] "
 if errorlevel 2 goto fin
-notepad "%DESTINO%.env"
+notepad "%DESTINO%\.env"
 
 :fin
 echo.

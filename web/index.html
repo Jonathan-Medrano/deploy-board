@@ -109,6 +109,9 @@
   tbody tr.b td:first-child{box-shadow:inset 3px 0 0 var(--bad)}
   tbody tr.a td:first-child{box-shadow:inset 3px 0 0 var(--warn)}
   tbody tr.g td:first-child{box-shadow:inset 3px 0 0 var(--good)}
+  /* La franja de PRE pisa la de severidad: importa mas marcar que hay que correrlo ANTES
+     del codigo que el semaforo de en que ambiente corrio. */
+  tbody tr.fila-pre td:first-child{box-shadow:inset 4px 0 0 var(--warn)}
   tbody tr.subido{opacity:.62}
   tbody tr.fuera{opacity:.5}
   .num{font-variant-numeric:tabular-nums; color:var(--faint); font-size:12.5px; width:1%; white-space:nowrap}
@@ -134,17 +137,27 @@
   .wi .sinvinc b{color:var(--faint); font-weight:600; font-size:13px; font-variant-numeric:tabular-nums}
   .scriptname{font-size:13.5px; line-height:1.4; min-width:230px}
   .scriptname .arch{display:block; color:var(--faint); font-size:11px; word-break:break-word; margin-top:1px}
+  .scriptname .nota-subida{display:block; margin-top:3px; font-size:11.5px; color:var(--muted)}
+  .scriptname .nota-subida.ok{color:var(--good)}
+  .scriptname .nota-subida.aviso{color:var(--warn); font-weight:600}
+  .wi em.fuera-sprint{color:var(--warn); cursor:help; border-bottom:1px dotted currentColor; display:inline-block}
   .acc{font-size:11px; letter-spacing:.06em; color:var(--muted); white-space:nowrap}
   .amb{font-size:12px; font-weight:600; white-space:nowrap; font-variant-numeric:tabular-nums}
   .amb.ok{color:var(--good)} .amb.falta{color:var(--bad)} .amb.dud{color:var(--warn)}
-  .pre{display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:10px; font-weight:600; letter-spacing:.08em;
-    padding:1px 5px; border-radius:2px; background:var(--accent-soft); color:var(--accent);
-    border:1px solid color-mix(in srgb,var(--accent) 30%,transparent)}
+  .pre{display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:11px; font-weight:700; letter-spacing:.06em;
+    padding:2px 7px; border-radius:3px; background:var(--warn-bg); color:var(--warn); vertical-align:middle;
+    border:1px solid color-mix(in srgb,var(--warn) 45%,transparent)}
   .resp{font-size:12.5px; white-space:nowrap}
   .resp.nadie{color:var(--faint); font-style:italic}
 
   /* ---------- marca main ---------- */
   .main-cell{white-space:nowrap; min-width:132px}
+  /* El badge automatico (detectado por el servidor) se ve distinto del check manual (lo tilda
+     una persona): forma de pastilla con borde solido, contra el checkbox+texto de la marca. */
+  .badge-main{display:block; width:fit-content; font-family:"IBM Plex Mono",monospace; font-size:10px; font-weight:600;
+    letter-spacing:.04em; padding:2px 7px; border-radius:999px; margin-bottom:5px; cursor:help; white-space:nowrap}
+  .badge-main.igual{background:var(--good-bg); color:var(--good); border:1px solid color-mix(in srgb,var(--good) 40%,transparent)}
+  .badge-main.distinta{background:var(--warn-bg); color:var(--warn); border:1px solid color-mix(in srgb,var(--warn) 40%,transparent)}
   .marca{display:flex; align-items:flex-start; gap:7px; cursor:pointer; font-size:12px; line-height:1.35}
   .marca input{margin:2px 0 0; accent-color:var(--good); width:15px; height:15px; cursor:pointer; flex:none}
   .marca input:disabled{cursor:not-allowed}
@@ -220,6 +233,17 @@
   tbody tr.sub td{background:var(--surface-2); padding:7px 12px; border-top:1px solid var(--line)}
   tbody tr.sub span:first-child{font-family:"IBM Plex Sans Condensed",sans-serif; font-weight:600; font-size:13px}
   tbody tr.sub .ayuda{color:var(--faint); font-size:11.5px; margin-left:10px}
+  /* Separador del bloque PRE arriba de todo: mismo patron de fila que .sub (encabezado de
+     tipo), pero con su propio color para no confundirlo con un grupo por tipo. */
+  tbody tr.pre-header td{padding:7px 12px; border-top:1px solid var(--line); font-family:"IBM Plex Sans Condensed",sans-serif; font-weight:600; font-size:13px}
+  tbody tr.pre-header.antes td{background:var(--warn-bg); color:var(--warn)}
+  tbody tr.pre-header.despues td{background:var(--surface-2); color:var(--muted)}
+  /* Mismo separador, pero DENTRO de un grupo plegado (Cerrados, Pausados, fuera de la
+     subida): mas chico e indentado para no pelear visualmente con el encabezado del grupo. */
+  tbody tr.pre-header.sub td{padding:5px 12px 5px 24px; font-size:11.5px; font-weight:500}
+  .chip.pre-chip[aria-pressed="true"]{background:var(--warn); border-color:var(--warn); color:#fff}
+  html:not([data-theme="light"]) .chip.pre-chip[aria-pressed="true"]{color:#2d2311}
+  :root[data-theme="dark"] .chip.pre-chip[aria-pressed="true"]{color:#2d2311}
   .tipo-cell{width:1%}
   .badge{display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:9.5px; font-weight:600; letter-spacing:.06em; padding:2px 6px; border-radius:2px; border:1px solid currentColor; cursor:help; white-space:nowrap}
   .t-sp{color:#0d6b68} .t-estructura{color:#8a5a00} .t-datos{color:#5d6f70} .t-otro{color:#8b9b9c}
@@ -332,7 +356,7 @@
     <div class="limites">
       <h2>Qué no se midió</h2>
       <ul>
-        <li><strong>main no se sondea nunca.</strong> Su estado no sale de una consulta: sale de esta página, de lo que una persona marca al subir. Por eso la marca es un hecho registrado y no una medición.</li>
+        <li><strong>main no se consulta como base.</strong> Se lee la rama main del repo en Azure: si el script llegó ahí, se da por corrido en producción (badge "Ya en rama MAIN"). Los scripts que nunca se commitean sólo se pueden marcar a mano con "Corrió en main".</li>
         <li><strong>Los ambientes medidos son los que se ven en la tabla.</strong> Lo que no está en <span class="mono">D.meta.ambientes</span> no se sondeó.</li>
       </ul>
     </div>
@@ -343,6 +367,7 @@
     Las marcas de <strong>main</strong> se guardan en <span class="mono" id="estadoDir"></span>.
   </footer>
 </div>
+<script src="util.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

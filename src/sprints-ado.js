@@ -2,6 +2,7 @@ import { crearClienteAdo } from './ado/client.js';
 import { rutaDeIteracion, carpetaSugerida, ordenarIteraciones } from './sprints.js';
 import { opcionesDelRepo } from './medir.js';
 import { CARPETA_POR_DEFECTO } from './fuentes/repoAdo.js';
+import { fechaLocal } from './fecha.js';
 
 // Las dos listas que necesita el selector, y la sugerencia que las empareja. Se devuelven
 // JUNTAS a proposito: una iteracion sin su carpeta, o al reves, deja la comparacion contra el
@@ -9,7 +10,7 @@ import { CARPETA_POR_DEFECTO } from './fuentes/repoAdo.js';
 // El sprint en curso: el que contiene la fecha de hoy. Es lo que se quiere ver al abrir el
 // tablero — ordenar por fecha deja arriba los sprints FUTUROS, que estan creados en Azure con
 // meses de anticipacion y no tienen nada que subir.
-export function iteracionActual(iteraciones, hoy = new Date().toISOString().slice(0, 10)) {
+export function iteracionActual(iteraciones, hoy = fechaLocal()) {
   return iteraciones.find((i) => i.inicio && i.fin && i.inicio.slice(0, 10) <= hoy && hoy <= i.fin.slice(0, 10)) || null;
 }
 

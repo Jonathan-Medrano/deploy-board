@@ -97,3 +97,47 @@ test('la rama se puede elegir, y por defecto es la de integracion del Api.Net', 
   await descubrirRepoEnAdo(ado, { sprint: SPRINT, rama: 'main' });
   assert.equal(ramaUsada, 'main');
 });
+
+test('un SP sin id en el nombre entra y se vincula por la carpeta del work item', async () => {
+  const ado = adoFalso([`${CARPETA}/${SPRINT}/US-25051/sp_algo.sql`]);
+  const r = await descubrirRepoEnAdo(ado, { sprint: SPRINT });
+  assert.equal(r.length, 1);
+  assert.equal(r[0].wiId, 25051);
+  assert.equal(r[0].vinculadoPor, 'contenedor');
+});
+
+test('el respaldo __OLD sigue afuera: es el cuerpo que ya esta en stage/main', async () => {
+  const ado = adoFalso([`${CARPETA}/${SPRINT}/US-1/sp_algo__OLD.sql`, `${CARPETA}/${SPRINT}/US-1/sp_algo__old.SQL`]);
+  assert.equal((await descubrirRepoEnAdo(ado, { sprint: SPRINT })).length, 0);
+});
+
+test('el __NEW entra: es la copia commiteada del script adjunto', async () => {
+  const ado = adoFalso([
+    `${CARPETA}/${SPRINT}/BUG-25017_Descuento/GetPriceWithDiscountAndDiscount__NEW.sql`,
+    `${CARPETA}/${SPRINT}/BUG-25017_Descuento/GetPriceWithDiscountAndDiscount__OLD.sql`,
+  ]);
+  const r = await descubrirRepoEnAdo(ado, { sprint: SPRINT });
+  assert.equal(r.length, 1);
+  assert.equal(r[0].esNew, true);
+  assert.equal(r[0].nombreSp, 'GetPriceWithDiscountAndDiscount');
+  assert.equal(r[0].wiId, 25017);
+  assert.equal(r[0].carpeta, 'BUG-25017_Descuento');
+});
+
+test('un __NEW ilegible sigue marcado como __NEW', async () => {
+  const ruta = `${CARPETA}/${SPRINT}/BUG-25017_X/sp_a__NEW.sql`;
+  const r = await descubrirRepoEnAdo(adoFalso([ruta], {}, { fallaAl: ruta }), { sprint: SPRINT });
+  assert.equal(r[0].esNew, true);
+  assert.equal(r[0].nombreSp, 'sp_a');
+});
+
+test('un script comun no queda marcado como __NEW', async () => {
+  const r = await descubrirRepoEnAdo(adoFalso([`${CARPETA}/${SPRINT}/US-1/${N1}`]), { sprint: SPRINT });
+  assert.equal(r[0].esNew, undefined);
+});
+
+test('una carpeta sin numero deja el script sin work item, no con uno inventado', async () => {
+  const ado = adoFalso([`${CARPETA}/${SPRINT}/Varios/sp_algo.sql`]);
+  const r = await descubrirRepoEnAdo(ado, { sprint: SPRINT });
+  assert.equal(r[0].wiId, null);
+});

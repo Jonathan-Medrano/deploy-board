@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { extraerObjetos } from '../../src/parser/objetos.js';
-import { normalizarDefinicion } from '../../src/parser/normalizar.js';
+import { normalizarDefinicion, sinComentarios } from '../../src/parser/normalizar.js';
 
 test('procedure', () => {
   const o = extraerObjetos('CREATE PROCEDURE [dbo].[sp_getselectproducts] AS SELECT 1;');
@@ -55,4 +55,54 @@ test('normalizar saca USE, GO, SET y comentarios, y unifica CREATE con ALTER', (
   const a = normalizarDefinicion('USE [dev_fidel_db]\nGO\nSET ANSI_NULLS ON\nGO\n-- hola\nCREATE PROCEDURE dbo.x AS SELECT 1');
   const b = normalizarDefinicion('ALTER   PROCEDURE dbo.x AS  SELECT 1');
   assert.equal(a, b);
+});
+
+test('un -- adentro de un literal NO es un comentario: la sonda de FILA no se pierde', () => {
+  const sql = "IF NOT EXISTS (SELECT 1 FROM dbo.Config WHERE Clave = 'a--b')\nINSERT INTO dbo.Config (Clave) VALUES ('a--b')";
+  const o = extraerObjetos(sql);
+  assert.equal(o.length, 1);
+  assert.equal(o[0].tipo, 'FILA');
+  assert.equal(o[0].valor, "'a--b'");
+});
+
+test('un /* adentro de un literal NO abre un comentario de bloque', () => {
+  // El "/* nota */" real al final es lo que hace RED al regex viejo: sin conciencia de
+  // literales, agarra desde el primer '/*' (adentro de 'x/*y') hasta este '*/' y se come
+  // todo el medio, incluido el INSERT.
+  const sql = "IF NOT EXISTS (SELECT 1 FROM dbo.Config WHERE Clave = 'x/*y')\nINSERT INTO dbo.Config (Clave) VALUES ('x/*y') /* nota */";
+  const o = extraerObjetos(sql);
+  assert.equal(o.length, 1);
+  assert.equal(o[0].tipo, 'FILA');
+  assert.equal(o[0].valor, "'x/*y'");
+});
+
+test("una comilla escapada ('') no cierra el literal, y el -- comment real despues SI se saca", () => {
+  const limpio = sinComentarios("SELECT 'it''s' -- comment\nGO");
+  assert.match(limpio, /'it''s'/);
+  assert.doesNotMatch(limpio, /comment/);
+});
+
+test('una comilla adentro de [corchetes] no deja un literal abierto: no hay VIEW fantasma', () => {
+  const sql = "ALTER TABLE dbo.T ADD [a'b] BIT NULL\nGO\n-- Reemplaza al viejo CREATE VIEW dbo.vw_legacy que se borra\nCREATE PROCEDURE dbo.sp_x AS SELECT 1";
+  const o = extraerObjetos(sql);
+  const modulos = o.filter((x) => ['PROCEDURE', 'FUNCTION', 'VIEW', 'TRIGGER'].includes(x.tipo)).map((x) => x.nombre);
+  assert.deepEqual(modulos, ['sp_x']);
+});
+
+test('un -- adentro de un [identificador entre corchetes] no es un comentario, y uno real despues SI se saca', () => {
+  const limpio = sinComentarios('SELECT [a--b]\n-- comment real\nGO');
+  assert.match(limpio, /\[a--b\]/);
+  assert.doesNotMatch(limpio, /comment real/);
+});
+
+test('un identificador entre "comillas dobles" no abre un literal de comilla simple', () => {
+  const limpio = sinComentarios('SELECT "a\'b" -- comment\nGO');
+  assert.match(limpio, /"a'b"/);
+  assert.doesNotMatch(limpio, /comment/);
+});
+
+test('un corchete escapado (]]) adentro de un identificador no lo cierra antes de tiempo', () => {
+  const limpio = sinComentarios("SELECT [x]]y'] -- comment\nGO");
+  assert.match(limpio, /\[x\]\]y'\]/);
+  assert.doesNotMatch(limpio, /comment/);
 });

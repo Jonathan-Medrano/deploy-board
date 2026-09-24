@@ -210,3 +210,10 @@ test('el formato declara que produccion no se midio', () => {
   const txt = formatearReporte(construirReporte(base));
   assert.match(txt, /produccion/i);
 });
+
+test('accionDe(D13) dice que revisar y en que ambiente corrio', () => {
+  const a = accionDe({ codigo: 'D13', titulo: 'Pausado pero corrio en dev, stage', corrioEn: ['dev', 'stage'] });
+  assert.match(a, /^Revisar/);
+  assert.match(a, /pausado/);
+  assert.match(a, /dev, stage/);
+});

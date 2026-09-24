@@ -115,3 +115,48 @@ test('la vista cuenta cuantos scripts hay de cada tipo', () => {
   const v = construirVista(reporteBase);
   assert.deepEqual(v.meta.porTipo, { estructura: 1, sp: 1 });
 });
+
+test('row.main proyecta el estado que dejo marcarEnMain, y null cuando el script no aparece en el mapa', () => {
+  const v = construirVista({ ...reporteBase, enMain: { a: 'igual' }, ramaMain: 'main' });
+  assert.equal(v.filas[0].main, 'igual');
+  assert.equal(v.filas[1].main, null);
+});
+
+test('sin enMain en el reporte, row.main es null para todas las filas (compatibilidad con reportes viejos)', () => {
+  const v = construirVista(reporteBase);
+  assert.equal(v.filas[0].main, null);
+  assert.equal(v.filas[1].main, null);
+});
+
+test('meta.ramaMain copia la rama que uso el reporte, o null cuando no se evaluo', () => {
+  assert.equal(construirVista({ ...reporteBase, ramaMain: 'main' }).meta.ramaMain, 'main');
+  assert.equal(construirVista(reporteBase).meta.ramaMain, null);
+});
+
+test('cada fila proyecta subida (cerrado/pausado/null), enRepo y wiFuera', () => {
+  const v = construirVista({
+    ...reporteBase,
+    orden: [
+      script({ id: 'c', wiId: 20, fuentes: ['adjunto'] }),
+      script({ id: 'p', wiId: 21, fuentes: ['adjunto', 'repo'] }),
+      script({ id: 'd', wiId: 22, fuentes: ['repo'] }),
+      script({ id: 'n', wiId: 23 }),
+    ],
+    wis: [
+      { id: 20, estado: 'Closed', fueraDelSprint: true },
+      { id: 21, estado: 'Paused' },
+      { id: 22, estado: 'Done' },
+      { id: 23, estado: 'Active' },
+    ],
+  });
+  const f = Object.fromEntries(v.filas.map((x) => [x.id, x]));
+  assert.equal(f.c.subida, 'cerrado');
+  assert.equal(f.p.subida, 'pausado');
+  assert.equal(f.d.subida, 'cerrado');
+  assert.equal(f.n.subida, null);
+  assert.equal(f.c.enRepo, false);
+  assert.equal(f.p.enRepo, true);
+  assert.equal(f.d.enRepo, true);
+  assert.equal(f.c.wiFuera, true);
+  assert.equal(f.p.wiFuera, false);
+});

@@ -1,9 +1,11 @@
 (function(){
-  function esc(s){ var d=document.createElement('div'); d.textContent = s==null?'':String(s); return d.innerHTML; }
-  function hoy(){ return new Date().toISOString().slice(0,10); }
-
   function leerPref(k, def){ try { var v = localStorage.getItem(k); return v==null?def:v==='1'; } catch(e){ return def; } }
   function guardarPref(k, v){ try { localStorage.setItem(k, v?'1':'0'); } catch(e){} }
+
+  /* Igual que leerPref/guardarPref pero para un valor de texto (no booleano): lo usa el
+     filtro de PRE, que tiene tres estados ('', 'pre', 'nopre') en vez de dos. */
+  function leerPrefStr(k, def){ try { var v = localStorage.getItem(k); return v==null?def:v; } catch(e){ return def; } }
+  function guardarPrefStr(k, v){ try { localStorage.setItem(k, v); } catch(e){} }
 
   function leerLista(k){ try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch(e){ return []; } }
   function guardarLista(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
@@ -15,11 +17,15 @@
        contador te deja esconder los Paused y creer que hay menos bloqueantes. */
     estadosOcultos: leerLista('deployboard.estadosOcultos'),
     tiposOcultos: leerLista('deployboard.tiposOcultos'),
+    /* Lente de PRE: '' (sin filtrar), 'pre' (solo PRE) o 'nopre' (solo lo que no es PRE). */
+    filtroPre: leerPrefStr('deployboard.filtroPre', ''),
     agrupar: leerPref('deployboard.agrupar', true),
     abiertos: {
       subidos:   leerPref('deployboard.abre.subidos', false),
       fuera:     leerPref('deployboard.abre.fuera', false),
       ignorados: leerPref('deployboard.abre.ignorados', false),
+      cerrados:  leerPref('deployboard.abre.cerrados', false),
+      pausados:  leerPref('deployboard.abre.pausados', false),
     },
   };
 
@@ -27,19 +33,25 @@
   var SEV = { bloqueante:'b', alto:'a', medio:'m' };
 
   /* ---------------- semantica de cada ola ---------------- */
-  /* La marca de main saca al script del conteo de ESA subida, pero no borra su hueco en dev:
-     eso se cuenta aparte, porque es cierto igual. */
-  function yaSubido(f){ return !!estado.marcas[f.id]; }
+  /* "Ya en main" ahora se sabe de DOS formas: la marca manual (una persona lo tildo) o que
+     el archivo llego solo a la rama main del repo (f.main === 'igual', lo mide el servidor
+     comparando hash de contenido). Las dos cuentan igual para todo lo que sigue: el veredicto,
+     los contadores y los grupos de la tabla. 'distinta' (main tiene OTRA version) NO cuenta:
+     ese archivo especifico todavia no llego. */
+  function yaSubido(f){ return !!estado.marcas[f.id] || f.main === 'igual'; }
   function ignorado(f){ return !!estado.ignorados[f.id]; }
   function enStage(f){ return f.est[D.meta.destino] === 'OK'; }
+  /* Un work item cerrado (se asume en main) o pausado (no se ejecuta) no es parte de la subida:
+     no bloquea, no queda pendiente, no "va" ni "queda afuera". Tiene su propio grupo al final. */
+  function fueraDeLaSubida(f){ return !!f.subida; }
   function bloquea(f){
     /* Ignorar SI saca del conteo: es una decision explicita del equipo, guardada con nombre y
        fecha. Esconder por estado NO, porque es una lente personal. */
-    if (ignorado(f) || yaSubido(f)) return false;
+    if (fueraDeLaSubida(f) || ignorado(f) || yaSubido(f)) return false;
     if (estado.ola === 'stage') return false;        // sube lo que hay: nada lo bloquea
     return !enStage(f);                                // dev->stage->main: si no llego a stage, no llega a main
   }
-  function quedaAfuera(f){ return estado.ola === 'stage' && !enStage(f) && !yaSubido(f) && !ignorado(f); }
+  function quedaAfuera(f){ return estado.ola === 'stage' && !fueraDeLaSubida(f) && !enStage(f) && !yaSubido(f) && !ignorado(f); }
   function oculto(f){
     return estado.estadosOcultos.indexOf(f.wiEstado || '(sin estado)') >= 0
         || estado.tiposOcultos.indexOf(f.tipo || 'otro') >= 0;
@@ -60,6 +72,8 @@
     return D.filas.filter(function(f){
       if (estado.persona && f.resp !== estado.persona) return false;
       if (oculto(f)) return false;
+      if (estado.filtroPre === 'pre' && !f.pre) return false;
+      if (estado.filtroPre === 'nopre' && f.pre) return false;
       return true;
     });
   }
@@ -107,17 +121,17 @@
   function pintarResumen(){
     var todas = visibles();
     var filtrando = todas.length !== D.filas.length;
-    var subidos = todas.filter(yaSubido).length;
+    var subidos = todas.filter(function(f){ return !fueraDeLaSubida(f) && yaSubido(f); }).length;
     var stage = todas.filter(enStage).length;
     var devMedido = D.meta.ambientes.indexOf('dev') >= 0;
-    var faltaDev = devMedido ? todas.filter(function(f){ return f.est.dev !== 'OK'; }).length : 0;
+    var faltaDev = devMedido ? todas.filter(function(f){ return !fueraDeLaSubida(f) && f.est.dev !== 'OK'; }).length : 0;
     var afuera = todas.filter(quedaAfuera).length;
     var bloq = todas.filter(bloquea).length;
 
     var v = document.getElementById('veredicto');
     var num, tit, sub, ok;
     if (estado.ola === 'stage') {
-      var vanAhora = todas.filter(function(f){ return enStage(f) && !yaSubido(f); }).length;
+      var vanAhora = todas.filter(function(f){ return !fueraDeLaSubida(f) && enStage(f) && !yaSubido(f); }).length;
       num = vanAhora; ok = vanAhora === 0;
       tit = vanAhora === 0 ? 'Todo lo de stage ya está marcado' : vanAhora + (vanAhora === 1 ? ' script va en esta subida' : ' scripts van en esta subida');
       sub = afuera ? afuera + (afuera === 1 ? ' queda afuera: todavía no llegó a stage' : ' quedan afuera: todavía no llegaron a stage')
@@ -125,7 +139,7 @@
     } else {
       num = bloq; ok = bloq === 0;
       tit = bloq === 0 ? 'Listo para subir' : 'No subas todavía';
-      sub = bloq === 0 ? 'todo el sprint llegó a stage o ya está marcado en main'
+      sub = bloq === 0 ? 'todo el sprint llegó a stage o ya está en main'
                        : (bloq === 1 ? 'script del sprint no llegó a stage, así que no va a llegar a main'
                                      : 'scripts del sprint no llegaron a stage, así que no van a llegar a main');
     }
@@ -147,17 +161,28 @@
       lineas.push('El filtro está tapando <b>' + tapadas + '</b> ' + (tapadas === 1 ? 'fila' : 'filas') +
         ' de las <b>' + D.filas.length + '</b> del sprint. <b>Todos los números de esta pantalla cuentan sólo lo que ves.</b>');
     }
+    /* Sin ramaMain no hubo lectura de main (sin carpeta de sprint, o una medicion vieja de
+       antes de este feature): ningun script puede tener el badge, y eso hay que decirlo en vez
+       de dejar la columna vacia sin explicacion. Texto fijo, sin datos interpolados. */
+    if (!D.meta.ramaMain) {
+      lineas.push('La rama main no se evaluó en esta medición (sin carpeta de sprint, o medición anterior a esta versión): ningún script tiene el badge de MAIN.');
+    }
     ad.hidden = lineas.length === 0;
     ad.innerHTML = lineas.join('<br><br>');
 
-    var ign = todas.filter(ignorado).length;
+    var ign = todas.filter(function(f){ return !fueraDeLaSubida(f) && ignorado(f); }).length;
+    /* Igual criterio que faltaDev/ign: cuenta sobre lo visible y sin lo que ya quedo afuera
+       de la subida (cerrado/pausado), asi el numero grande sigue significando lo mismo en
+       toda la fila de tiles. */
+    var pre = todas.filter(function(f){ return !fueraDeLaSubida(f) && f.pre; }).length;
     document.getElementById('contadores').innerHTML =
       tile(todas.length, filtrando ? 'scripts en la lista filtrada' : 'scripts del sprint', filtrando ? 'filtrado' : '') +
       tile(stage, 'ya están en stage') +
-      tile(subidos, 'marcados como subidos a main', 'arriba') +
+      tile(subidos, 'ya en main (rama o marcado)', 'arriba') +
       (devMedido ? tile(faltaDev, 'no corrieron en dev', 'hay') : '') +
       (ign ? tile(ign, 'sin tener en cuenta') : '') +
-      tile(todas.filter(function(f){ return D.meta.ambientes.every(function(a){ return f.est[a] !== 'OK'; }); }).length, 'no corrieron en ningún lado');
+      (pre ? tile(pre, 'PRE van antes del código', 'hay') : '') +
+      tile(todas.filter(function(f){ return !fueraDeLaSubida(f) && D.meta.ambientes.every(function(a){ return f.est[a] !== 'OK'; }); }).length, 'no corrieron en ningún lado');
   }
 
   /* ---------------- filtros por tipo y por estado ---------------- */
@@ -170,6 +195,17 @@
       return '<button type="button" class="chip tipo t-' + t + '" data-t="' + t + '" aria-pressed="' + on + '"' +
         ' title="' + esc(TIPOS[t].ayuda) + '">' + esc(TIPOS[t].txt) + ' <span class="n">' + cuenta[t] + '</span></button>';
     }).join('');
+
+    /* Lente de PRE, al lado de los chips de tipo. Solo aparece si hay al menos un PRE en el
+       sprint: sin eso, "Sin PRE" seria identico a "Todos" y el chip no serviria de nada. */
+    var totalPre = D.filas.filter(function(f){ return f.pre; }).length;
+    var totalNoPre = D.filas.length - totalPre;
+    var chipsPre = totalPre ?
+      '<button type="button" class="chip pre-chip" data-pre="pre" aria-pressed="' + (estado.filtroPre === 'pre') + '"' +
+        ' title="Ver sólo los scripts PRE, los que corren antes del código">PRE <span class="n">· ' + totalPre + '</span></button>' +
+      '<button type="button" class="chip pre-chip" data-pre="nopre" aria-pressed="' + (estado.filtroPre === 'nopre') + '"' +
+        ' title="Ver sólo los scripts que NO son PRE">Sin PRE <span class="n">· ' + totalNoPre + '</span></button>'
+      : '';
 
     var ests = [];
     D.filas.forEach(function(f){
@@ -184,9 +220,9 @@
         esc(x.e) + ' <span class="n">' + x.n + '</span></button>';
     }).join('');
 
-    var limpiable = estado.estadosOcultos.length || estado.tiposOcultos.length;
+    var limpiable = estado.estadosOcultos.length || estado.tiposOcultos.length || estado.filtroPre;
     document.getElementById('estados').innerHTML =
-      '<div class="franja"><span class="lbl">Qué toca</span>' + chipsTipo +
+      '<div class="franja"><span class="lbl">Qué toca</span>' + chipsTipo + chipsPre +
         '<button type="button" class="chip agrupar" id="agrupar" aria-pressed="' + estado.agrupar + '"' +
         ' title="Separar la tabla por tipo, manteniendo el orden de ejecución dentro de cada uno">' +
         (estado.agrupar ? 'separado por tipo' : 'una sola lista') + '</button></div>' +
@@ -205,8 +241,27 @@
   /* ---------------- tabla ---------------- */
   var tbody = document.getElementById('filas');
 
-  function filaHTML(f, numero){
+  /* La nota de una fila apartada dice por que esta ahi y si hay algo que mirar. Un cerrado se
+     da por subido a main, pero solo se CONFIRMA si el archivo llego a main o alguien lo marco;
+     sin copia en el repo no hay contra que confirmarlo. Un pausado que ya corrio es D13. */
+  function notaDeSubida(f){
+    if (f.subida === 'cerrado') {
+      if (f.main === 'igual' || estado.marcas[f.id]) return { txt:'Confirmado en main', cls:'ok' };
+      if (!f.enRepo) return { txt:'Cerrado; no se puede confirmar en main: nunca se commiteó', cls:'' };
+      return { txt:'Cerrado pero no se encontró en main', cls:'aviso' };
+    }
+    if (f.subida === 'pausado') {
+      var corrio = D.meta.ambientes.filter(function(a){ return f.est[a] === 'OK'; });
+      if (corrio.length) return { txt:'Pausado pero corrió en ' + corrio.join(', '), cls:'aviso' };
+    }
+    return null;
+  }
+
+  function filaHTML(f, numero, nota){
     var m = estado.marcas[f.id];
+    var fueraSprint = f.wiFuera
+      ? '<em class="fuera-sprint" title="El work item no está en este sprint: se trajo aparte porque el script lo nombra.">fuera del sprint</em>'
+      : '';
 
     var wiCell;
     if (!f.wi) {
@@ -214,7 +269,7 @@
     } else if (!ORG) {
       // Sin organizacion configurada no hay link: un href a medias manda al que lo aprieta a
       // una pagina que no existe.
-      wiCell = '<span class="sinvinc"><b>' + f.wi + '</b>' + (f.wiEstado ? '<em>' + esc(f.wiEstado) + '</em>' : '') + '</span>';
+      wiCell = '<span class="sinvinc"><b>' + f.wi + '</b>' + (f.wiEstado ? '<em>' + esc(f.wiEstado) + '</em>' : '') + fueraSprint + '</span>';
     } else {
       var inferido = f.via === 'contenedor';
       wiCell =
@@ -224,15 +279,27 @@
           (inferido
             ? '<em class="inferido" title="El nombre no trae [U-xxxxx]: el vinculo sale del work item que lo CONTIENE, no del nombre.">por contenedor</em>'
             : (f.wiEstado ? '<em>' + esc(f.wiEstado) + '</em>' : '')) +
+          fueraSprint +
         '</a>' +
         (f.padre ? '<a class="padre" href="' + ORG + f.padre + '" target="_blank" rel="noopener" title="Abrir el work item padre ' + f.padre + '">padre ' + f.padre + '</a>' : '');
     }
 
     var quien = m ? (((CONFIG && m.por === CONFIG.quien) ? 'vos' : (m.por || 'alguien')) + (m.fecha ? ' · ' + m.fecha : '')) : '';
-    var mainCell =
+
+    /* Badge automatico, separado del check manual: uno lo detecta el servidor comparando
+       contenido contra la rama main, el otro lo tilda una persona. Que se vean distintos evita
+       que alguien lea el badge como "ya lo marque yo" cuando en realidad nadie lo toco. */
+    var badgeMain = '';
+    if (f.main === 'igual') {
+      badgeMain = '<span class="badge-main igual" title="El archivo ya esta en la rama main del repo, con el mismo contenido: segun la regla del equipo, ya corrio en produccion.">Ya en rama MAIN</span>';
+    } else if (f.main === 'distinta') {
+      badgeMain = '<span class="badge-main distinta" title="Hay un archivo con este nombre en main, pero con OTRO contenido: la version que vas a subir todavia no llego.">En MAIN, pero otra versión</span>';
+    }
+
+    var mainCell = badgeMain +
       '<label class="marca' + (m ? ' puesta' : '') + '">' +
         '<input type="checkbox" data-id="' + esc(f.id) + '"' + (m ? ' checked' : '') + '>' +
-        '<span>' + (m ? 'subido' : 'marcar') + (m ? '<span class="quien">' + esc(quien) + '</span>' : '') + '</span>' +
+        '<span>Corrió en main' + (m ? '<span class="quien">' + esc(quien) + '</span>' : '') + '</span>' +
       '</label>';
 
     var ign = ignorado(f);
@@ -243,8 +310,9 @@
         (ign ? '↺' : '✕') + '</button>';
 
     var clases = [sevDeFila(f)];
+    if (f.pre) clases.push('fila-pre');
     if (ign) clases.push('ignorado');
-    else if (m) clases.push('subido');
+    else if (yaSubido(f)) clases.push('subido');
     else if (quedaAfuera(f)) clases.push('fuera');
 
     var ambCells = D.meta.ambientes.map(function(a){
@@ -255,8 +323,9 @@
     return '<tr class="' + clases.join(' ') + '">' +
       '<td class="num">' + numero + '</td>' +
       '<td class="wi">' + wiCell + '</td>' +
-      '<td class="scriptname">' + (f.pre ? '<span class="pre">PRE</span> ' : '') + esc(f.desc) +
+      '<td class="scriptname">' + (f.pre ? '<span class="pre">PRE · antes del código</span> ' : '') + esc(f.desc) +
         '<span class="arch">' + esc(f.arch) + '</span>' +
+        (nota ? '<span class="nota-subida' + (nota.cls ? ' ' + nota.cls : '') + '">' + esc(nota.txt) + '</span>' : '') +
         ((f.obj && f.obj.length) ? '<span class="objs">' + f.obj.map(esc).join(' · ') + '</span>' : '') + '</td>' +
       '<td class="tipo-cell"><span class="badge t-' + (f.tipo || 'otro') + '" title="' + esc(TIPOS[f.tipo || 'otro'].ayuda) + '">' +
         esc(TIPOS[f.tipo || 'otro'].corto) + '</span></td>' +
@@ -274,10 +343,13 @@
      ola: en `stage` lo que todavia no llego a stage no entra en ESA subida; en `dev` el alcance
      es el sprint completo y solo se aparta lo ya subido. */
   function particion(vs){
-    var ign = vs.filter(ignorado);
-    var subidos = vs.filter(function(f){ return yaSubido(f) && !ignorado(f); });
-    var fuera = estado.ola === 'stage' ? vs.filter(quedaAfuera) : [];
-    var activos = vs.filter(function(f){
+    var cerrados = vs.filter(function(f){ return f.subida === 'cerrado'; });
+    var pausados = vs.filter(function(f){ return f.subida === 'pausado'; });
+    var enLaSubida = vs.filter(function(f){ return !fueraDeLaSubida(f); });
+    var ign = enLaSubida.filter(ignorado);
+    var subidos = enLaSubida.filter(function(f){ return yaSubido(f) && !ignorado(f); });
+    var fuera = estado.ola === 'stage' ? enLaSubida.filter(quedaAfuera) : [];
+    var activos = enLaSubida.filter(function(f){
       return !ignorado(f) && !yaSubido(f) && !(estado.ola === 'stage' && quedaAfuera(f));
     });
     var grupos = [];
@@ -287,13 +359,59 @@
     });
     if (subidos.length) grupos.push({
       id:'subidos', n:subidos.length, filas:subidos, marca:'✓',
-      txt:'Ya subidos a main',
+      txt:'Ya en main (rama o marcado)',
     });
     if (ign.length) grupos.push({
       id:'ignorados', n:ign.length, filas:ign, marca:'✕',
       txt:'Sin tener en cuenta · decisión del equipo, no cuentan como bloqueantes',
     });
+    if (cerrados.length) grupos.push({
+      id:'cerrados', n:cerrados.length, filas:cerrados, marca:'■', nota:true,
+      txt:'Cerrados: se asumen en main',
+    });
+    if (pausados.length) grupos.push({
+      id:'pausados', n:pausados.length, filas:pausados, marca:'‖', nota:true,
+      txt:'En pausa: no se ejecutan',
+    });
     return { activos: activos, grupos: grupos };
+  }
+
+  /* Arma el bloque de filas activas (agrupado por tipo si corresponde), arrancando la
+     numeracion en numInicio. La usan tanto la tabla sin PRE como el bloque "Despues del
+     deploy" cuando si hay PRE, para no duplicar la logica de agrupamiento. */
+  function renderActivos(lista, numInicio){
+    var num = numInicio;
+    var html;
+    if (estado.agrupar) {
+      /* Separado por tipo, PERO la numeracion sigue siendo global y en orden de ejecucion:
+         el orden es la instruccion, y renumerar dentro de cada bloque haria pensar que se
+         puede correr un bloque entero antes que otro. */
+      html = ORDEN_TIPOS.map(function(t){
+        var dentro = lista.filter(function(f){ return (f.tipo || 'otro') === t; });
+        if (!dentro.length) return '';
+        return '<tr class="sub"><td colspan="' + COLSPAN + '"><span class="t-' + t + '">' + esc(TIPOS[t].txt) + '</span>' +
+               '<span class="ayuda">' + esc(TIPOS[t].ayuda) + '</span></td></tr>' +
+               dentro.map(function(f){ num++; return filaHTML(f, String(num)); }).join('');
+      }).join('');
+    } else {
+      html = lista.map(function(f){ num++; return filaHTML(f, String(num)); }).join('');
+    }
+    return { html: html, num: num };
+  }
+
+  /* Un grupo plegado (Cerrados, Pausados, "No entran en esta subida", etc) puede tener PRE
+     mezclados con el resto: al abrirlo se separan con los mismos dos sub-encabezados de
+     arriba, mas chicos/indentados para no competir con el separador del grupo. Un grupo sin
+     ningun PRE se pinta exactamente como antes, sin encabezados de mas. */
+  function renderGrupoFilas(g){
+    var pre = g.filas.filter(function(f){ return f.pre; });
+    var resto = g.filas.filter(function(f){ return !f.pre; });
+    var fila = function(f){ return filaHTML(f, g.marca, g.nota ? notaDeSubida(f) : null); };
+    if (!pre.length) return g.filas.map(fila).join('');
+    return '<tr class="pre-header sub antes"><td colspan="' + COLSPAN + '">⚠ ANTES del deploy (PRE) · ' + pre.length + '</td></tr>' +
+      pre.map(fila).join('') +
+      '<tr class="pre-header sub despues"><td colspan="' + COLSPAN + '">Después del deploy · ' + resto.length + '</td></tr>' +
+      resto.map(fila).join('');
   }
 
   function pintarTabla(){
@@ -301,22 +419,26 @@
     var p = particion(vs);
 
     /* La numeracion cuenta SOLO lo activo: esa columna es el orden en que hay que ejecutar
-       ahora, no la posicion historica. */
+       ahora, no la posicion historica. Si hay PRE en el bloque activo, van aparte y PRIMERO
+       (fuera del agrupado por tipo: importa mas el orden de ejecucion entre ellos que su
+       tipo), y recien despues sigue el bloque de siempre. Sin PRE, es exactamente lo de antes. */
+    var pre = p.activos.filter(function(f){ return f.pre; });
+    var resto = p.activos.filter(function(f){ return !f.pre; });
+
     var html;
-    if (estado.agrupar) {
-      /* Separado por tipo, PERO la numeracion sigue siendo global y en orden de ejecucion:
-         el orden es la instruccion, y renumerar dentro de cada bloque haria pensar que se
-         puede correr un bloque entero antes que otro. */
+    if (pre.length) {
+      /* El bloque PRE nunca se separa por tipo, agrupar o no: lo que importa ahi es el orden
+         de ejecucion entre ellos, no si es un SP o un DDL. Solo "Despues" respeta agrupar. */
       var num = 0;
-      html = ORDEN_TIPOS.map(function(t){
-        var dentro = p.activos.filter(function(f){ return (f.tipo || 'otro') === t; });
-        if (!dentro.length) return '';
-        return '<tr class="sub"><td colspan="' + COLSPAN + '"><span class="t-' + t + '">' + esc(TIPOS[t].txt) + '</span>' +
-               '<span class="ayuda">' + esc(TIPOS[t].ayuda) + '</span></td></tr>' +
-               dentro.map(function(f){ num++; return filaHTML(f, String(num)); }).join('');
-      }).join('');
+      var htmlPre = pre.map(function(f){ num++; return filaHTML(f, String(num)); }).join('');
+      var rResto = renderActivos(resto, num);
+      html =
+        '<tr class="pre-header antes"><td colspan="' + COLSPAN + '">⚠ ANTES del deploy (PRE) · ' + pre.length + '</td></tr>' +
+        htmlPre +
+        '<tr class="pre-header despues"><td colspan="' + COLSPAN + '">Después del deploy · ' + resto.length + '</td></tr>' +
+        rResto.html;
     } else {
-      html = p.activos.map(function(f, i){ return filaHTML(f, String(i + 1)); }).join('');
+      html = renderActivos(p.activos, 0).html;
     }
 
     p.grupos.forEach(function(g){
@@ -327,7 +449,7 @@
           g.txt + ' · ' + g.n +
           '<span class="hint">' + (abierto ? 'ocultar' : 'mostrar') + '</span>' +
         '</button></td></tr>';
-      if (abierto) html += g.filas.map(function(f){ return filaHTML(f, g.marca); }).join('');
+      if (abierto) html += renderGrupoFilas(g);
     });
 
     tbody.innerHTML = html;
@@ -457,19 +579,27 @@
       estado.agrupar = !estado.agrupar;
       guardarPref('deployboard.agrupar', estado.agrupar);
     } else if (e.target.closest('#verTodos')) {
-      estado.estadosOcultos = []; estado.tiposOcultos = [];
+      estado.estadosOcultos = []; estado.tiposOcultos = []; estado.filtroPre = '';
       guardarLista('deployboard.estadosOcultos', []); guardarLista('deployboard.tiposOcultos', []);
+      guardarPrefStr('deployboard.filtroPre', '');
     } else {
-      var ct = e.target.closest('.chip.tipo');
-      if (ct) {
-        var t = ct.dataset.t, j = estado.tiposOcultos.indexOf(t);
-        if (j >= 0) estado.tiposOcultos.splice(j, 1); else estado.tiposOcultos.push(t);
-        guardarLista('deployboard.tiposOcultos', estado.tiposOcultos);
+      var cp = e.target.closest('.chip.pre-chip');
+      if (cp) {
+        var vp = cp.dataset.pre;
+        estado.filtroPre = (estado.filtroPre === vp) ? '' : vp;
+        guardarPrefStr('deployboard.filtroPre', estado.filtroPre);
       } else {
-        var c = e.target.closest('.chip.est'); if (!c) return;
-        var v = c.dataset.e, i = estado.estadosOcultos.indexOf(v);
-        if (i >= 0) estado.estadosOcultos.splice(i, 1); else estado.estadosOcultos.push(v);
-        guardarLista('deployboard.estadosOcultos', estado.estadosOcultos);
+        var ct = e.target.closest('.chip.tipo');
+        if (ct) {
+          var t = ct.dataset.t, j = estado.tiposOcultos.indexOf(t);
+          if (j >= 0) estado.tiposOcultos.splice(j, 1); else estado.tiposOcultos.push(t);
+          guardarLista('deployboard.tiposOcultos', estado.tiposOcultos);
+        } else {
+          var c = e.target.closest('.chip.est'); if (!c) return;
+          var v = c.dataset.e, i = estado.estadosOcultos.indexOf(v);
+          if (i >= 0) estado.estadosOcultos.splice(i, 1); else estado.estadosOcultos.push(v);
+          guardarLista('deployboard.estadosOcultos', estado.estadosOcultos);
+        }
       }
     }
     pintarEstados(); pintarTodo();
@@ -647,13 +777,13 @@
     boton.textContent = 'Midiendo...';
     avisar('Midiendo: consultando Azure DevOps y las bases de dev y stage. Puede tardar decenas de segundos.');
 
-    // Sin seleccion (SPRINTS no cargo todavia, o los selects estan vacios) se manda un cuerpo
-    // vacio: el servidor lo trata igual que "sin cuerpo" y cae al .env, que es el
-    // comportamiento de siempre.
+    /* La carpeta viaja SIEMPRE que el selector cargo, aunque este vacia: vacia significa
+       "sin repo", y omitirla hacia que el servidor usara la del .env. Si el selector no cargo
+       (Azure no contesto), no se manda y vale lo configurado. */
     var cuerpo = {};
     var elS = document.getElementById('selSprint'), elC = document.getElementById('selCarpeta');
     if (elS && elS.value) cuerpo.iteracion = elS.value;
-    if (elC && elC.value) cuerpo.sprint = elC.value;
+    if (elC && SPRINTS) cuerpo.sprint = elC.value || null;
 
     peticion('/api/medir', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cuerpo),

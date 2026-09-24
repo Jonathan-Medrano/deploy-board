@@ -48,11 +48,16 @@ export function construirReporte({
   scripts, wis, tasks, estados,
   destino = 'stage', ambientes = ['dev', 'stage'],
   roles = { promocion: null, produccion: null },
+  // `enMain` es el mapa { [scriptId]: 'igual'|'distinta' } de marcarEnMain (src/enMain.js).
+  // `ramaMain` es el nombre de rama que de verdad se leyo, o null cuando no se evaluo (sin
+  // sprint elegido, o la lectura de main fallo). Los dos se REENVIAN tal cual: reporte.js no
+  // vuelve a calcular nada, solo carga lo que medir.js ya resolvio.
+  enMain = {}, ramaMain = null,
 }) {
   // `roles` se REENVIA. Sin esto las reglas de ejecucion corren siempre con roles vacios y
   // todos los desvios de D2/D3/D4 salen sin responsable, configure el equipo lo que configure:
   // rolesDesde() y el parametro de detectarDesvios existirian sin que nada los conecte.
-  const desvios = detectarDesvios({ scripts, wis, tasks, estados, destino, roles });
+  const desvios = detectarDesvios({ scripts, wis, tasks, estados, destino, ambientes, roles });
   const bloqueantes = desvios.filter((d) => d.severidad === 'bloqueante').length;
 
   const sinVeredicto = [];
@@ -74,6 +79,7 @@ export function construirReporte({
     pendientesPorResponsable: agruparPorResponsable(desvios),
     revisarAMano: agruparRevisarAMano(desvios, scripts, wis),
     estados, wis, tasks, sinVeredicto,
+    enMain, ramaMain,
   };
 }
 
@@ -135,6 +141,8 @@ export function accionDe(d) {
     case 'D8':  return 'Corregir CantidadScripts en la US';
     case 'D9':  return 'Corregir TieneSP en la US';
     case 'D10': return 'Confirmar la numeracion: tarjeta contra repo';
+    case 'D12': return 'Unificar las versiones del script';
+    case 'D13': return `Revisar: el work item esta pausado pero el script ya corrio en ${(d.corrioEn || []).join(', ') || 'algun ambiente'}`;
     default:    return d.titulo;
   }
 }

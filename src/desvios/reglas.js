@@ -19,12 +19,26 @@ export function problemasDeNombre(s) {
   return p;
 }
 
+// Un work item cerrado o pausado no forma parte de la subida. Cerrado (Closed o Done): se asume
+// que ya esta en main. Pausado: no se ejecuta. Se clasifica por el estado, sin mayusculas.
+export function subidaDe(wi) {
+  const e = String((wi && wi.estado) || '').trim().toLowerCase();
+  if (e === 'closed' || e === 'done') return 'cerrado';
+  if (e === 'paused') return 'pausado';
+  return null;
+}
+
 export function detectarDesvios({
-  scripts = [], wis = [], tasks = [], estados = {}, destino = 'stage',
+  scripts = [], wis = [], tasks = [], estados = {}, destino = 'stage', ambientes = null,
   roles = { promocion: null, produccion: null },
 }) {
   const out = [];
   const porId = new Map(wis.map((w) => [w.id, w]));
+
+  // Un ambiente que no se midio no FALTA: no se pregunto. Sin esto, medir solo dev dejaba
+  // cada PRE como "Falta un PRE en stage", un bloqueante afirmado sobre una base que nadie
+  // consulto.
+  const medido = (amb) => !ambientes || ambientes.includes(amb);
 
   // Quien EJECUTA depende del AMBIENTE, no de quien escribio el script. El dev corre sus
   // scripts donde esta desarrollando; lo que falta en el ambiente DESTINO lo corre el
@@ -85,7 +99,16 @@ export function detectarDesvios({
     // un ambiente buscando algo que FALTA. Un "?" no cuenta: no se sabe, no se afirma.
     const corrio = Object.keys(est).filter((a) => est[a]?.estado === 'OK');
     const falta = Object.keys(est).filter((a) => est[a]?.estado === 'FALTA');
-    if (corrio.length && falta.length) {
+    // Los desvios de EJECUCION (D2, D3, D4) piden correr el script en algun lado. Si el work item
+    // esta cerrado o pausado el script no va en la subida, y pedir que se corra es una orden
+    // falsa. Lo que si importa de un pausado es lo contrario: que ya haya corrido (D13).
+    const subida = subidaDe(wi);
+    if (subida === 'pausado' && corrio.length) {
+      add('D13', 'alto', `Pausado pero corrio en ${corrio.join(', ')}`,
+        `${s.archivo} — el WI ${wi.id} esta en "${wi.estado}": no va en la subida, pero el script ya se ejecuto.`,
+        { scriptId: s.id, wiId: s.wiId, corrioEn: corrio });
+    }
+    if (!subida && corrio.length && falta.length) {
       const rompeDestino = falta.includes(destino);
       add('D2', rompeDestino ? 'bloqueante' : 'alto',
         `Corrio en ${corrio.join(', ')} y falta en ${falta.join(', ')}`,
@@ -96,7 +119,7 @@ export function detectarDesvios({
     }
 
     // D3 — un PRE que falta bloquea el deploy, no es una observacion.
-    if (s.esPre && rDestino !== 'OK') {
+    if (!subida && s.esPre && medido(destino) && rDestino !== 'OK') {
       add('D3', 'bloqueante', `Falta un PRE en ${destino}`,
         `${s.archivo} — los PRE corren ANTES de subir el codigo.`,
         { scriptId: s.id, wiId: s.wiId, ambiente: destino });
@@ -107,9 +130,9 @@ export function detectarDesvios({
     // significa que QA valido en stage, sea cual sea la promocion que venga despues. Si
     // `destino` no es stage, el responsable cae al dueno del WI por el else de ejecutaEn,
     // que es correcto: no hay promocion hacia stage en curso.
-    if (wi) {
+    if (wi && !subida) {
       const rw = rango(wi.estado);
-      if (rw != null && rw >= rango('Tested') && est.stage?.estado !== 'OK') {
+      if (rw != null && rw >= rango('Tested') && medido('stage') && est.stage?.estado !== 'OK') {
         add('D4', 'bloqueante', `WI ${wi.id} en "${wi.estado}" con un script sin correr en stage`,
           `${s.archivo} — stage dice "${est.stage?.estado ?? 'sin medir'}".`,
           { scriptId: s.id, wiId: wi.id, ambiente: 'stage' });
@@ -140,9 +163,27 @@ export function detectarDesvios({
         { scriptId: s.id, wiId: s.wiId });
     }
 
+    // D12 — el mismo script con contenido distinto en dos lugares. No se elige en silencio:
+    // se dice donde esta cada version y cual se midio, y el dueno las unifica.
+    if (s.contenidoDistinto) {
+      const donde = (s.versiones || []).map((v) => `${v.fuente} ${v.donde ?? '?'}`).join(', ');
+      // "Mas reciente" es un dato REAL solo si el adjunto medido trae `creado`: sin fecha no
+      // hay con que comparar y afirmar que es la mas nueva seria inventar un orden que nunca
+      // se midio.
+      const medida = f.includes('adjunto')
+        ? (s.creado ? 'la del adjunto mas reciente' : 'la del adjunto')
+        : 'la del repo';
+      add('D12', 'alto', 'El mismo script tiene contenido distinto en dos lugares',
+        `${s.archivo} — versiones en: ${donde}. Se midio ${medida}.`,
+        { scriptId: s.id, wiId: s.wiId });
+    }
+
     // D7 — sin id en el nombre. Si se pudo vincular por el contenedor ya no es huerfano, asi
     // que baja a medio y el texto lo dice: el nombre igual hay que arreglarlo, pero el script
     // no quedo sin tarjeta.
+    // Un X__NEW.sql no pasa por D7 ni D11: su nombre ES la convencion del equipo para la copia
+    // commiteada de un SP. Si quedo sin pareja, D5 ya dice lo que hay que hacer.
+    if (s.esNew) continue;
     if (s.wiId == null) {
       add('D7', 'alto', 'El nombre no trae work item y no se pudo vincular',
         `${s.archivo} — renombralo con la convencion [<T|B|U>-<id>].`, { scriptId: s.id });
@@ -165,22 +206,29 @@ export function detectarDesvios({
   // identica por cada script que la task contiene, inflaba el contador de bloqueantes y le
   // mostraba al responsable N veces la MISMA accion (mover la misma task al mismo estado).
   // Se emite una vez por par, recorriendo las tasks.
+  // Los ids en task.adjuntos son pre-reconciliacion; el script emparejado puede tener otro id
+  // pero guarda el viejo en aliases para que este lookup lo encuentre. Uno re-clavado por
+  // colision (01 y 02 en la misma tarjeta) guarda el suyo en idBase.
   for (const t of tasks) {
     const rt = rango(t.estado);
     if (rt == null) continue;
 
     const wisDeLaTask = new Set();
     for (const sid of t.adjuntos || []) {
-      const sc = scripts.find((x) => x.id === sid);
+      const sc = scripts.find((x) => x.id === sid || x.idBase === sid || (x.aliases || []).includes(sid));
       if (sc && sc.wiId != null) wisDeLaTask.add(sc.wiId);
     }
 
     for (const wiId of wisDeLaTask) {
       const wi = porId.get(wiId);
-      if (!wi) continue;
+      // Un WI traido de fuera del sprint no es el dueno de esta task: la task es del sprint y el
+      // WI solo aparece porque un script lo nombra (B-25038: task activa, bug cerrado en otro
+      // sprint). Pedir mover la task a su estado seria una orden falsa, y bloqueante.
+      if (!wi || wi.fueraDelSprint) continue;
       const rw = rango(wi.estado);
       if (rw == null || rw <= rt) continue;
-      add('D1', 'bloqueante',
+      // Un WI cerrado o pausado no va en la subida: el desvio queda como prolijidad, sin bloquear.
+      add('D1', subidaDe(wi) ? 'medio' : 'bloqueante',
         `La task de SCRIPTS quedo en "${t.estado}" y el WI ${wi.id} ya esta en "${wi.estado}"`,
         `El trabajo se dio por testeado pero su task contenedora (${t.id}) no se movio.`,
         { wiId: wi.id, taskId: t.id, accion: { tipo: 'setEstado', id: t.id, valor: wi.estado } });
@@ -192,7 +240,9 @@ export function detectarDesvios({
     const suyos = scripts.filter((s) => s.wiId === wi.id);
     if (!suyos.length) continue;
 
-    if (wi.cantidadScripts != null && Number(wi.cantidadScripts) !== suyos.length) {
+    // D8 no se evalua para un WI de fuera del sprint: solo se ven los scripts suyos que cayeron en
+    // este sprint, y proponer ese conteo como CantidadScripts escribiria un valor falso.
+    if (!wi.fueraDelSprint && wi.cantidadScripts != null && Number(wi.cantidadScripts) !== suyos.length) {
       add('D8', 'medio', `CantidadScripts dice ${wi.cantidadScripts} y hay ${suyos.length}`,
         `WI ${wi.id} — ${wi.titulo}`,
         { wiId: wi.id, accion: { tipo: 'setCampos', id: wi.id, valor: { 'Custom.CantidadScripts': suyos.length } } });

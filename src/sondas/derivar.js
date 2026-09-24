@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { normalizarDefinicion } from '../parser/normalizar.js';
+import { normalizarDefinicion, loteDelModulo } from '../parser/normalizar.js';
 
 const md5 = (s) => crypto.createHash('md5').update(s, 'utf8').digest('hex');
 
@@ -11,7 +11,7 @@ export function derivarSondas(objetos, sql, archivo) {
   for (const o of objetos) {
     switch (o.tipo) {
       case 'PROCEDURE': case 'FUNCTION': case 'VIEW': case 'TRIGGER':
-        agregar({ tipo: 'modulo', objeto: o.nombre, esperado: md5(normalizarDefinicion(sql)) });
+        agregar({ tipo: 'modulo', objeto: o.nombre, esperado: md5(normalizarDefinicion(loteDelModulo(sql, o.nombre))) });
         break;
       case 'COLUMN':     agregar({ tipo: 'columna', tabla: o.tabla, columna: o.columna }); break;
       case 'COLUMN_MAX': agregar({ tipo: 'columna_max', tabla: o.tabla, columna: o.columna }); break;

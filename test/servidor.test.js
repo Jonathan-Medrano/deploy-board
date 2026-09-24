@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { rutaSegura, crearManejador, TIPOS_MIME } from '../src/servidor.js';
+import { rutaSegura, crearManejador, TIPOS_MIME, opcionesPedidas } from '../src/servidor.js';
 
 test('una ruta normal se resuelve dentro de web/', () => {
   assert.equal(rutaSegura('/web/app.js'), 'app.js');
@@ -219,4 +219,19 @@ test('un cuerpo roto en medir da 400 y no dispara una medicion de veinte segundo
   const r = await man({ metodo: 'POST', ruta: '/api/medir', cuerpo: '{roto' });
   assert.equal(r.status, 400);
   assert.equal(midio, false);
+});
+
+test('elegir "sin carpeta" en pantalla NO cae a la carpeta del .env', () => {
+  const r = opcionesPedidas({ iteracion: 'I', sprint: 'Sprint_2026_09_02' }, { iteracion: 'Oct', sprint: null });
+  assert.equal(r.sprint, null);
+  assert.equal(r.iteracion, 'Oct');
+});
+
+test('una carpeta vacia tambien significa sin carpeta', () => {
+  assert.equal(opcionesPedidas({ sprint: 'S' }, { sprint: '' }).sprint, null);
+});
+
+test('si la pantalla no dice nada de la carpeta, manda la del .env', () => {
+  assert.equal(opcionesPedidas({ sprint: 'S' }, {}).sprint, 'S');
+  assert.equal(opcionesPedidas({ sprint: 'S' }, { iteracion: 'X' }).sprint, 'S');
 });

@@ -47,6 +47,18 @@ test('D1 no arrastra scriptId: no es un problema de un script', () => {
   assert.equal('scriptId' in d.find((x) => x.codigo === 'D1'), false);
 });
 
+test('D1 encuentra el script aunque su id cambio por emparejamiento: busca en aliases', () => {
+  const d = detectarDesvios({
+    scripts: [sc({ id: '25051/sp_algo', wiId: 25051, aliases: ['30015/sp_algo'] })],
+    wis: [wi({ id: 25051, estado: 'Tested' })],
+    tasks: [{ id: 30015, titulo: 'Scripts', estado: 'In Test', adjuntos: ['30015/sp_algo'] }],
+    estados: { '25051/sp_algo': verde }, destino: 'stage',
+  });
+  const d1 = d.find((x) => x.codigo === 'D1');
+  assert.ok(d1, 'D1 debe encontrarse buscando el alias de la task');
+  assert.equal(d1.wiId, 25051);
+});
+
 test('ningun desvio expone el campo interno ambiente', () => {
   const d = detectarDesvios({
     scripts: [sc({ esPre: true })], wis: [wi()], tasks: [],
@@ -354,9 +366,174 @@ test('los bloqueantes salen primero', () => {
   assert.equal(d[0].severidad, 'bloqueante');
 });
 
+test('D12: contenido distinto entre versiones del mismo script', () => {
+  const d = detectarDesvios({
+    scripts: [sc({
+      contenidoDistinto: true, fuentes: ['adjunto', 'repo'], creado: '2026-09-20',
+      versiones: [
+        { fuente: 'adjunto', donde: 900, hash: 'h1' }, { fuente: 'repo', donde: 'US-1', hash: 'h2' },
+      ],
+    })],
+    wis: [wi()], tasks: [], estados: { a: verde }, destino: 'stage',
+  });
+  const d12 = d.find((x) => x.codigo === 'D12');
+  assert.ok(d12, JSON.stringify(d.map((x) => x.codigo)));
+  assert.equal(d12.severidad, 'alto');
+  assert.match(d12.detalle, /adjunto 900/);
+  assert.match(d12.detalle, /repo US-1/);
+  assert.match(d12.detalle, /Se midio la del adjunto mas reciente/, 'con `creado`, si se puede afirmar que es la mas reciente');
+});
+
+test('D12 sin `creado` en el adjunto medido: no se afirma "mas reciente" porque no se sabe', () => {
+  const d = detectarDesvios({
+    scripts: [sc({
+      contenidoDistinto: true, fuentes: ['adjunto', 'repo'],
+      versiones: [
+        { fuente: 'adjunto', donde: 900, hash: 'h1' }, { fuente: 'repo', donde: 'US-1', hash: 'h2' },
+      ],
+    })],
+    wis: [wi()], tasks: [], estados: { a: verde }, destino: 'stage',
+  });
+  const d12 = d.find((x) => x.codigo === 'D12');
+  assert.ok(d12, JSON.stringify(d.map((x) => x.codigo)));
+  assert.match(d12.detalle, /Se midio la del adjunto\./, 'sin `creado` no hay con que comparar cual es la mas nueva');
+  assert.doesNotMatch(d12.detalle, /mas reciente/);
+});
+
 test('rolesDesde lee la configuracion y no inventa nombres', () => {
   assert.deepEqual(rolesDesde({ RESPONSABLE_PROMOCION: 'Ana', RESPONSABLE_PRODUCCION: 'Deploy' }),
     { promocion: 'Ana', produccion: 'Deploy' });
   assert.deepEqual(rolesDesde({}), { promocion: null, produccion: null });
   assert.deepEqual(rolesDesde({ RESPONSABLE_PROMOCION: '' }), { promocion: null, produccion: null });
+});
+
+test('D3 no dispara si el destino no se midio: no se afirma lo que no se pregunto', () => {
+  const d = detectarDesvios({
+    scripts: [sc({ esPre: true })], wis: [wi()], tasks: [],
+    estados: { a: { dev: { estado: 'OK' } } }, destino: 'stage', ambientes: ['dev'],
+  });
+  assert.equal(d.some((x) => x.codigo === 'D3'), false);
+});
+
+test('D3 sigue disparando si el destino se midio y falta', () => {
+  const d = detectarDesvios({
+    scripts: [sc({ esPre: true })], wis: [wi()], tasks: [],
+    estados: { a: { dev: { estado: 'OK' }, stage: { estado: 'FALTA' } } }, destino: 'stage', ambientes: ['dev', 'stage'],
+  });
+  assert.ok(d.some((x) => x.codigo === 'D3'));
+});
+
+test('D4 no dispara si stage no se midio', () => {
+  const d = detectarDesvios({
+    scripts: [sc()], wis: [wi({ estado: 'Tested' })], tasks: [],
+    estados: { a: { dev: { estado: 'OK' } } }, destino: 'stage', ambientes: ['dev'],
+  });
+  assert.equal(d.some((x) => x.codigo === 'D4'), false);
+});
+
+// ---------------- cerrados y pausados no van en la subida ----------------
+const estadosCorrioEnDev = { a: { dev: { estado: 'OK' }, stage: { estado: 'FALTA' } } };
+
+for (const estadoWi of ['Closed', 'Done', 'closed', 'Paused']) {
+  test(`un script de un work item en "${estadoWi}" no dispara D2, D3 ni D4`, () => {
+    const ds = detectarDesvios({
+      scripts: [sc({ esPre: true })],
+      wis: [{ id: 1, estado: estadoWi, asignadoA: 'Ana' }],
+      estados: estadosCorrioEnDev, ambientes: ['dev', 'stage'],
+    });
+    const codigos = ds.map((d) => d.codigo);
+    for (const c of ['D2', 'D3', 'D4']) assert.equal(codigos.includes(c), false, `${estadoWi}: ${codigos.join(',')}`);
+  });
+}
+
+test('D13: pausado pero ya corrio en algun ambiente, alto, a nombre del dueno del work item', () => {
+  const ds = detectarDesvios({
+    scripts: [sc({ responsables: { subioElAdjunto: { nombre: 'Beto' } } })],
+    wis: [{ id: 1, estado: 'Paused', asignadoA: 'Ana' }],
+    estados: estadosCorrioEnDev, ambientes: ['dev', 'stage'],
+  });
+  const d13 = ds.filter((d) => d.codigo === 'D13');
+  assert.equal(d13.length, 1, ds.map((d) => d.codigo).join(','));
+  assert.equal(d13[0].severidad, 'alto');
+  assert.equal(d13[0].responsable, 'Ana');
+  assert.equal(d13[0].scriptId, 'a');
+  assert.match(d13[0].titulo, /Pausado pero corrio en dev/);
+});
+
+test('D13 no sale si el pausado no corrio en ningun lado, ni para un cerrado que corrio', () => {
+  const pausadoSinCorrer = detectarDesvios({
+    scripts: [sc()], wis: [{ id: 1, estado: 'Paused' }],
+    estados: { a: { dev: { estado: 'FALTA' }, stage: { estado: 'FALTA' } } }, ambientes: ['dev', 'stage'],
+  });
+  assert.equal(pausadoSinCorrer.some((d) => d.codigo === 'D13'), false);
+  const cerrado = detectarDesvios({
+    scripts: [sc()], wis: [{ id: 1, estado: 'Closed' }], estados: estadosCorrioEnDev, ambientes: ['dev', 'stage'],
+  });
+  assert.equal(cerrado.some((d) => d.codigo === 'D13'), false);
+});
+
+test('un work item activo sigue disparando D2 como siempre', () => {
+  const ds = detectarDesvios({
+    scripts: [sc()], wis: [{ id: 1, estado: 'Active' }], estados: estadosCorrioEnDev, ambientes: ['dev', 'stage'],
+  });
+  assert.ok(ds.some((d) => d.codigo === 'D2'));
+});
+
+// ---------------- review de 5468f60 ----------------
+test('B-25038: un WI traido de fuera del sprint no dispara D1 contra la task del sprint', () => {
+  const ds = detectarDesvios({
+    scripts: [sc({ id: 'a', wiId: 25038, esPre: true })],
+    wis: [{ id: 25038, estado: 'Closed', fueraDelSprint: true }],
+    tasks: [{ id: 30015, estado: 'Active', adjuntos: ['a'] }],
+    estados: {}, ambientes: ['dev', 'stage'],
+  });
+  assert.equal(ds.some((d) => d.codigo === 'D1'), false, ds.map((d) => `${d.codigo}/${d.severidad}`).join(','));
+});
+
+test('un WI de fuera del sprint no dispara D8 (solo se ven sus scripts de este sprint), D9 si', () => {
+  const ds = detectarDesvios({
+    scripts: [sc({ objetos: [{ tipo: 'PROCEDURE', nombre: 'sp_a' }] })],
+    wis: [{ id: 1, estado: 'Active', cantidadScripts: 3, tieneSP: '0 - No', fueraDelSprint: true }],
+    estados: {},
+  });
+  const codigos = ds.map((d) => d.codigo);
+  assert.equal(codigos.includes('D8'), false, codigos.join(','));
+  assert.ok(codigos.includes('D9'), codigos.join(','));
+});
+
+for (const [estadoWi, estadoTask] of [['Closed', 'Active'], ['Done', 'Active'], ['Paused', 'New']]) {
+  test(`D1 para un WI en "${estadoWi}" baja a medio: no va en la subida`, () => {
+    const ds = detectarDesvios({
+      scripts: [sc({ id: 'a', wiId: 1 })],
+      wis: [{ id: 1, estado: estadoWi }],
+      tasks: [{ id: 9, estado: estadoTask, adjuntos: ['a'] }],
+      estados: {},
+    });
+    const d1 = ds.filter((d) => d.codigo === 'D1');
+    assert.equal(d1.length, 1, ds.map((d) => d.codigo).join(','));
+    assert.equal(d1[0].severidad, 'medio');
+  });
+}
+
+test('D1 para un WI activo sigue siendo bloqueante', () => {
+  const ds = detectarDesvios({
+    scripts: [sc({ id: 'a', wiId: 1 })],
+    wis: [{ id: 1, estado: 'Tested' }],
+    tasks: [{ id: 9, estado: 'Active', adjuntos: ['a'] }],
+    estados: {},
+  });
+  assert.equal(ds.find((d) => d.codigo === 'D1').severidad, 'bloqueante');
+});
+
+test('un __NEW sin pareja da D5 pero no D7 ni D11: su nombre es la convencion del equipo', () => {
+  const ds = detectarDesvios({
+    scripts: [sc({
+      archivo: 'Foo__NEW.sql', descripcion: null, accion: null, esNew: true, nombreSp: 'Foo',
+      vinculadoPor: 'contenedor', fuentes: ['repo'],
+    })],
+    wis: [{ id: 1, estado: 'Active' }], estados: {},
+  });
+  const codigos = ds.map((d) => d.codigo);
+  assert.ok(codigos.includes('D5'), codigos.join(','));
+  for (const c of ['D7', 'D11']) assert.equal(codigos.includes(c), false, codigos.join(','));
 });

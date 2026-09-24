@@ -1,5 +1,5 @@
 import { decodificarSql } from '../parser/leerSql.js';
-import { armarScriptParcial } from './comun.js';
+import { armarScriptParcial, esRespaldoViejo, esVersionNueva } from './comun.js';
 import { parsearNombre } from '../parser/nombre.js';
 
 export const REPO_POR_DEFECTO = 'Api.Net';
@@ -21,18 +21,27 @@ export async function descubrirRepoEnAdo(ado, { sprint, repo = REPO_POR_DEFECTO,
   const candidatos = items
     .filter((i) => !i.esCarpeta && i.ruta.startsWith(prefijo))
     .map((i) => ({ ruta: i.ruta, partes: i.ruta.slice(prefijo.length).split('/') }))
-    // Solo la convencion. Los __OLD/__NEW quedan afuera solos: no empiezan con '['.
-    .filter((c) => c.partes.length >= 2 && /^\[/.test(c.partes[c.partes.length - 1]) && /\.sql$/i.test(c.ruta));
+    // Todo .sql dentro de la carpeta de un work item, salvo el respaldo __OLD. Antes solo
+    // entraban los que empezaban con '[', y los SP —que nunca traen el id en el nombre—
+    // quedaban siempre como "adjunto pero no en el repo" (D6 falso). El __NEW SI entra: es la
+    // copia commiteada del adjunto, y el reconciliador lo une con el.
+    .filter((c) => c.partes.length >= 2 && /\.sql$/i.test(c.ruta) && !esRespaldoViejo(c.ruta));
 
   const out = [];
   for (const c of candidatos) {
     const nombre = c.partes[c.partes.length - 1];
     const carpetaWi = c.partes[0];
+    const numCarpeta = /(\d+)/.exec(carpetaWi);
+    // El nombre del SP queda como viene en el archivo; el reconciliador lo compara sin
+    // mayusculas contra los modulos que define el adjunto.
+    const deNew = esVersionNueva(nombre) ? { esNew: true, nombreSp: nombre.replace(/__NEW\.sql$/i, '') } : {};
     try {
       const buf = await ado.descargarArchivo(repo, c.ruta, rama);
       out.push(armarScriptParcial(nombre, decodificar(buf), 'repo', {
         carpeta: carpetaWi,
         responsables: { commiteoEnElRepo: await ado.ultimoCommitDe(repo, c.ruta) },
+        wiIdFallback: numCarpeta ? Number(numCarpeta[1]) : null,
+        ...deNew,
       }));
     } catch (e) {
       // Un archivo ilegible es UN script sin veredicto, no un barrido caido. Y el NOMBRE
@@ -42,6 +51,7 @@ export async function descubrirRepoEnAdo(ado, { sprint, repo = REPO_POR_DEFECTO,
         ...parsearNombre(nombre),
         id: `ilegible/${carpetaWi}/${nombre}`,
         objetos: [], sql: '', fuente: 'repo', carpeta: carpetaWi, responsables: {},
+        hash: null, ...deNew,
         sondas: [{ id: 's0', tipo: 'sin_sonda', detalle: `no pude bajar ${nombre}: ${e.message}` }],
       });
     }

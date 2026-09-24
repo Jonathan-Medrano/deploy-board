@@ -12,6 +12,31 @@ test('nombre canonico completo', () => {
   assert.equal(r.descripcion, 'Columna ActualizarCategoriaTiendaNube en Integracion');
 });
 
+test('PRE despues del NN (US-24994): mismo resultado que PRE antes', () => {
+  const antes = parsearNombre('[U-24994] - PRE - 01 - Tabla LogRateLimit con indices - CREATE.sql');
+  const despues = parsearNombre('[U-24994] - 01 - PRE - Tabla LogRateLimit con indices - CREATE.sql');
+  assert.equal(despues.esPre, true);
+  assert.equal(despues.orden, 1);
+  assert.equal(despues.descripcion, 'Tabla LogRateLimit con indices');
+  assert.equal(despues.accion, 'CREATE');
+  assert.equal(despues.esPre, antes.esPre);
+  assert.equal(despues.orden, antes.orden);
+  assert.equal(despues.descripcion, antes.descripcion);
+  assert.equal(despues.accion, antes.accion);
+});
+
+test('sin PRE en ninguna posicion', () => {
+  const r = parsearNombre('[U-1] - 01 - Desc - ALTER.sql');
+  assert.equal(r.esPre, false);
+  assert.equal(r.orden, 1);
+});
+
+test('"pre" adentro de la descripcion no es PRE', () => {
+  const r = parsearNombre('[U-1] - 01 - Precio de lista - ALTER.sql');
+  assert.equal(r.esPre, false);
+  assert.equal(r.descripcion, 'Precio de lista');
+});
+
 test('sin PRE y sin orden', () => {
   const r = parsearNombre('[B-25017] - Descuento por proveedor en GetPriceWithDiscountAndDiscount - ALTER.sql');
   assert.equal(r.wiTipo, 'B');
