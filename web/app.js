@@ -618,17 +618,44 @@
     cuenta.textContent = hs.length ? String(hs.length) : '';
     var nombrePr = 'PR #' + esc(String(a.pr.id)) + (a.pr.titulo ? ' · ' + esc(a.pr.titulo) : '');
     var cab = '<p class="pr-cab">' + (a.pr.link ? '<a href="' + esc(a.pr.link) + '" target="_blank" rel="noopener">' + nombrePr + '</a>' : nombrePr) +
-      ' · <span class="mono">' + esc(a.pr.origen) + ' → ' + esc(a.pr.destino) + '</span> · ' + a.scripts + ' scripts en el PR</p>';
-    if (!hs.length) {
-      cuerpo.innerHTML = cab + '<p class="vacio">Coincide: lo que trae el PR es lo que midió el panel.</p>';
+      ' · <span class="mono">' + esc(a.pr.origen) + ' → ' + esc(a.pr.destino) + '</span>' +
+      (a.pr.estado === 'completed' ? ' · <b>ya completado</b>' : '') + '</p>';
+    /* El desglose es lo que permite cruzar el numero contra la pestaña Files de ADO: sin el,
+       "20 scripts" contra "26 archivos" se lee como un error de medicion. */
+    var r = a.resumen;
+    if (r) {
+      var carpetas = Object.keys(r.porCarpeta || {}).map(function(k){ return esc(k) + ': ' + r.porCarpeta[k]; }).join(' · ');
+      cab += '<p class="pr-cab mono">' + r.archivos + ' archivos en DB_Migrations · ' + r.scripts + ' scripts · ' +
+        r.respaldos + ' respaldos __OLD (no se ejecutan) · ' + r.borrados + ' borrados' + (carpetas ? '<br>' + carpetas : '') + '</p>';
+    } else {
+      cab += '<p class="pr-cab">' + a.scripts + ' scripts en el PR</p>';
+    }
+    if (a.sprintFuera) {
+      var medida = (D.meta && D.meta.sprint) || 'la carpeta elegida';
+      cuerpo.innerHTML = cab + '<p class="pr-error">Este PR no trae scripts de ' + esc(medida) +
+        ': no se comparó. Elegí la carpeta de uno de los sprints que trae y volvé a medir con el PR.</p>';
       return;
     }
-    cuerpo.innerHTML = cab + '<div class="tabla-wrap"><table><thead><tr><th>Script</th><th>Dónde</th><th>Qué pasa</th><th>Por qué</th><th>Responsable</th></tr></thead><tbody>' +
-      hs.map(function(h){
-        var wi = h.wiId != null ? '<div class="mono">#' + esc(String(h.wiId)) + '</div>' : '';
-        return '<tr class="b"><td>' + esc(h.archivo) + wi + '</td><td class="mono">' + esc(h.donde || '') + '</td><td>' + esc(h.que) +
-          '</td><td>' + esc(h.porque) + '</td><td>' + esc(h.responsable || 'sin responsable') + '</td></tr>';
-      }).join('') + '</tbody></table></div>';
+    var html = cab;
+    if (!hs.length) {
+      html += '<p class="vacio">Coincide: lo que trae el PR es lo que midió el panel.</p>';
+    } else {
+      html += '<div class="tabla-wrap"><table><thead><tr><th>Script</th><th>Dónde</th><th>Qué pasa</th><th>Por qué</th><th>Responsable</th></tr></thead><tbody>' +
+        hs.map(function(h){
+          var wi = h.wiId != null ? '<div class="mono">#' + esc(String(h.wiId)) + '</div>' : '';
+          return '<tr class="b"><td>' + esc(h.archivo) + wi + '</td><td class="mono">' + esc(h.donde || '') + '</td><td>' + esc(h.que) +
+            '</td><td>' + esc(h.porque) + '</td><td>' + esc(h.responsable || 'sin responsable') + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+    var otros = a.otrosSprints || [];
+    if (otros.length) {
+      html += '<p class="pr-cab">También trae ' + otros.length + ' de otros sprints (no son de este sprint, no es un error):</p>' +
+        '<ul class="lista-dec">' + otros.map(function(o){
+          return '<li><span>' + esc(o.archivo) + (o.wiId != null ? ' <span class="mono">#' + esc(String(o.wiId)) + '</span>' : '') +
+            '</span><span class="mono">' + esc(o.donde || '') + '</span></li>';
+        }).join('') + '</ul>';
+    }
+    cuerpo.innerHTML = html;
   }
 
   function pintarTodo(){

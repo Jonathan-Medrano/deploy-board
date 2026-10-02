@@ -348,6 +348,9 @@
   .tabla-repos .acc{white-space:nowrap; text-align:right}
   .tabla-repos .err{color:var(--bad)}
   .tabla-repos .sub{font-size:11.5px; color:var(--faint)}
+  .confirmar-todos{margin:10px 0; padding:10px 14px; border:1px solid var(--line); border-radius:4px; background:var(--surface); font-size:13px}
+  .confirmar-todos .acciones{display:flex; gap:8px; margin-top:8px}
+  #reposLinks{margin:6px 0 10px}
   @media (prefers-reduced-motion: reduce){*{animation:none!important; transition:none!important}}
 </style>
 </head>
@@ -476,9 +479,12 @@
         </select>
       </label>
       <button type="button" id="medirRepos" class="btn-actualizar">Medir</button>
+      <button type="button" id="crearTodos" class="btn-secundario" hidden>Crear todos</button>
       <span id="reposMedido" class="mono"></span>
     </div>
+    <div id="confirmarTodos" class="confirmar-todos" hidden></div>
     <p id="reposAviso" hidden></p>
+    <ul id="reposLinks" class="lista-dec" hidden></ul>
     <div class="tabla-wrap" id="reposTablaWrap" hidden>
       <table class="tabla-repos">
         <thead><tr><th>Repo</th><th>Ramas</th><th>Pendientes</th><th>Último commit</th><th>PR activo</th><th></th></tr></thead>

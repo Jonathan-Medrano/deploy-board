@@ -1,4 +1,5 @@
 import { leerScriptDelRepo, REPO_POR_DEFECTO, CARPETA_POR_DEFECTO } from './fuentes/repoAdo.js';
+import { esRespaldoViejo } from './fuentes/comun.js';
 import { candidatosStageToDev, RAMA_STAGE_POR_DEFECTO } from './stageToDev.js';
 import { esMismoNombre } from './enMain.js';
 import { subidaDe } from './desvios/reglas.js';
@@ -28,11 +29,17 @@ const QUE = {
   'sin-commit': 'En el panel, no en el PR',
 };
 
+// Devuelve los hallazgos y, aparte, lo que el PR trae de OTROS sprints sin ser de este: un
+// stage -> main puede llevar varios sprints juntos (el 25611 llevo 09_01 y 09_02), y eso no es
+// un error. Si es un hallazgo cuando el work item es de ESTE sprint: es el incidente que origino
+// este control, un script commiteado en la carpeta equivocada.
 export function compararPrConPanel({ scriptsPr = [], scriptsPanel = [], wis = [], enMain = {}, sprint = null }) {
   const wiDe = (id) => wis.find((w) => w.id === id) || null;
+  const delSprint = new Set(wis.filter((w) => !w.fueraDelSprint).map((w) => w.id));
   const nombreDe = (p) => (p && p.nombre) || null;
   const usados = new Set();
   const out = [];
+  const otrosSprints = [];
   const hallazgo = (tipo, sc, donde, porque, responsable) =>
     out.push({ tipo, que: QUE[tipo], archivo: sc.archivo, wiId: sc.wiId ?? null, donde, porque, responsable: responsable || null });
 
@@ -75,21 +82,40 @@ export function compararPrConPanel({ scriptsPr = [], scriptsPanel = [], wis = []
     if (!sprint) {
       hallazgo('fuera-del-panel', p, p.ruta, 'La medición no tenía carpeta de sprint elegida: el panel no leyó el repo.', quien);
     } else if (p.sprint && p.sprint !== sprint) {
-      hallazgo('otro-sprint', p, p.ruta,
-        `Está commiteado en la carpeta ${p.sprint}; el panel mide ${sprint}. Si es de este sprint, va en su carpeta y adjunto a la tarjeta.`, quien);
+      if (p.wiId != null && delSprint.has(p.wiId)) {
+        hallazgo('otro-sprint', p, p.ruta,
+          `Es de un work item de ${sprint} pero está commiteado en la carpeta ${p.sprint}: va en su carpeta y adjunto a la tarjeta.`, quien);
+      } else {
+        otrosSprints.push({ archivo: p.archivo, wiId: p.wiId ?? null, donde: p.ruta, responsable: quien });
+      }
     } else {
       hallazgo('fuera-del-panel', p, p.ruta,
         'Está en master pero no en la rama dev que lee el panel: entró directo a stage o se borró de dev.', quien);
     }
   }
 
-  return out.sort((a, b) => GRAVEDAD.indexOf(a.tipo) - GRAVEDAD.indexOf(b.tipo));
+  return { hallazgos: out.sort((a, b) => GRAVEDAD.indexOf(a.tipo) - GRAVEDAD.indexOf(b.tipo)), otrosSprints };
+}
+
+// Lo que el PR trae en DB_Migrations, contado como lo cuenta una persona mirando la pestaña
+// Files: sin este desglose, "20 scripts" contra "26 archivos" se lee como un error de medicion.
+export function resumenDelDiff(cambios, carpeta = CARPETA_POR_DEFECTO) {
+  const prefijo = `${carpeta}/`;
+  const archivos = (cambios || []).filter((c) => c && c.item && !c.item.isFolder && String(c.item.path || '').startsWith(prefijo));
+  const borrados = archivos.filter((c) => /delete/i.test(String(c.changeType || '')));
+  const respaldos = archivos.filter((c) => !borrados.includes(c) && esRespaldoViejo(c.item.path));
+  const rutas = candidatosStageToDev(cambios, carpeta);
+  const porCarpeta = {};
+  for (const r of rutas) {
+    const partes = r.slice(prefijo.length).split('/');
+    if (partes.length >= 3) porCarpeta[partes[0]] = (porCarpeta[partes[0]] || 0) + 1;
+  }
+  return { archivos: archivos.length, scripts: rutas.length, respaldos: respaldos.length, borrados: borrados.length, porCarpeta };
 }
 
 // Los .sql que trae el PR, leidos en el commit de origen: lo que el PR va a llevar a main, no
 // lo que la rama tenga hoy.
-async function scriptsDelPr(ado, pr, { repo, carpeta }) {
-  const rutas = candidatosStageToDev(await ado.diffEntreCommits(repo, pr.commitDestino, pr.commitOrigen), carpeta);
+async function scriptsDelPr(ado, pr, rutas, { repo, carpeta }) {
   const out = [];
   for (const ruta of rutas) {
     const rel = ruta.slice(carpeta.length + 1);
@@ -119,11 +145,22 @@ export async function analizarPr(ado, {
     avisos.push(`El PR ${pr.id} va de ${pr.origen} a ${pr.destino}, no de ${ramaStage} a ${ramaMain}: se comparó igual.`);
   }
 
-  const delPr = await scriptsDelPr(ado, pr, { repo, carpeta });
-  return {
-    pr: { id: pr.id, titulo: pr.titulo, estado: pr.estado, repo, origen: pr.origen, destino: pr.destino },
-    scripts: delPr.length,
-    hallazgos: compararPrConPanel({ scriptsPr: delPr, scriptsPanel: scripts, wis, enMain, sprint }),
-    avisos,
-  };
+  if (pr.estado === 'completed') {
+    avisos.push(`El PR ${pr.id} ya está completado: la comparación es histórica, contra lo que llevó a ${pr.destino} en su momento.`);
+  }
+
+  const cambios = await ado.diffEntreCommits(repo, pr.commitDestino, pr.commitOrigen);
+  const resumen = resumenDelDiff(cambios, carpeta);
+  const delPr = await scriptsDelPr(ado, pr, candidatosStageToDev(cambios, carpeta), { repo, carpeta });
+  const prInfo = { id: pr.id, titulo: pr.titulo, estado: pr.estado, repo, origen: pr.origen, destino: pr.destino };
+
+  // Comparar un PR contra un sprint que no trae llena la tabla de ruido: todo lo del PR sale
+  // "no medido" y todo lo del sprint "no esta en el PR". Medido el 2026-10-02 con el 25611
+  // contra Sprint_2026_10_01: 44 hallazgos, ninguno real. Se dice y no se compara.
+  const sprintFuera = !!sprint && delPr.length > 0 && !delPr.some((p) => p.sprint === sprint);
+  if (sprintFuera) {
+    return { pr: prInfo, scripts: delPr.length, resumen, sprintFuera, hallazgos: [], otrosSprints: [], avisos };
+  }
+  const { hallazgos, otrosSprints } = compararPrConPanel({ scriptsPr: delPr, scriptsPanel: scripts, wis, enMain, sprint });
+  return { pr: prInfo, scripts: delPr.length, resumen, sprintFuera, hallazgos, otrosSprints, avisos };
 }

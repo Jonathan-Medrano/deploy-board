@@ -31,3 +31,30 @@ var temaEfectivo = function (guardado, prefiereOscuro) {
 var temaAlternado = function (tema) {
   return tema === 'dark' ? 'light' : 'dark';
 };
+
+/* Los repos que "Crear todos" va a crear: con cambios, sin PR activo y sin error, y solo si la
+   tabla es del pase elegido. Crear con la tabla de otro pase seria crear el pase equivocado. */
+var reposParaCrear = function (medido, parElegido) {
+  if (!medido || medido.par !== parElegido) return [];
+  return (medido.repos || [])
+    .filter(function (f) { return !f.error && f.pendientes > 0 && !f.prActivo; })
+    .map(function (f) { return f.repo; });
+};
+
+/* De a uno y en orden: cada creacion re-mide su repo en el servidor, y N pedidos juntos al
+   mismo PAT es lo que hace que Azure conteste 429. Un repo que falla no frena a los demas. */
+var crearEnSerie = function (repos, crearUno, alTerminarUno) {
+  var resultados = [];
+  return repos.reduce(function (cadena, repo) {
+    return cadena.then(function () {
+      return Promise.resolve().then(function () { return crearUno(repo); }).then(function (r) {
+        return { repo: repo, ok: true, id: r.id, link: r.link };
+      }, function (e) {
+        return { repo: repo, ok: false, error: e.message, link: (e.body && e.body.link) || null };
+      }).then(function (res) {
+        resultados.push(res);
+        alTerminarUno(res);
+      });
+    });
+  }, Promise.resolve()).then(function () { return resultados; });
+};

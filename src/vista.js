@@ -113,7 +113,10 @@ function vistaAnalisisPr(reporte, org, proyecto) {
   const link = org && proyecto
     ? `${String(org).replace(/\/+$/, '')}/${proyecto}/_git/${encodeURIComponent(a.pr.repo)}/pullrequest/${a.pr.id}`
     : null;
-  return { pr: { ...a.pr, link }, scripts: a.scripts, hallazgos: a.hallazgos };
+  return {
+    pr: { ...a.pr, link }, scripts: a.scripts, hallazgos: a.hallazgos,
+    resumen: a.resumen ?? null, sprintFuera: !!a.sprintFuera, otrosSprints: a.otrosSprints || [],
+  };
 }
 
 // La pestaña stage -> dev: lo que la rama de stage tiene y dev no. Lo ejecuta el encargado,

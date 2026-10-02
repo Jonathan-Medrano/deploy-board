@@ -62,3 +62,56 @@ test('temaAlternado pasa al otro tema', () => {
   assert.equal(temaAlternado('dark'), 'light');
   assert.equal(temaAlternado('light'), 'dark');
 });
+
+const plano = (x) => JSON.parse(JSON.stringify(x));
+const MEDIDO = {
+  par: 'stage-main',
+  repos: [
+    { repo: 'A', pendientes: 3, prActivo: null, error: null },
+    { repo: 'B', pendientes: 0, prActivo: null, error: null },
+    { repo: 'C', pendientes: 2, prActivo: { id: 9 }, error: null },
+    { repo: 'D', pendientes: 0, prActivo: null, error: '403' },
+    { repo: 'E', pendientes: 1, prActivo: null, error: null },
+  ],
+};
+
+test('crear todos toma solo los repos con cambios, sin PR activo y sin error', () => {
+  const { reposParaCrear } = cargar();
+  assert.deepEqual(plano(reposParaCrear(MEDIDO, 'stage-main')), ['A', 'E']);
+});
+
+test('crear todos no ofrece nada si la tabla es de otro pase o no se midio', () => {
+  const { reposParaCrear } = cargar();
+  assert.deepEqual(plano(reposParaCrear(MEDIDO, 'dev-stage')), []);
+  assert.deepEqual(plano(reposParaCrear(null, 'stage-main')), []);
+});
+
+test('crear en serie: de a uno, en orden, y un fallo no frena a los demas', async () => {
+  const { crearEnSerie } = cargar();
+  const orden = [];
+  let enVuelo = 0, maximo = 0;
+  const crearUno = async (repo) => {
+    enVuelo++; maximo = Math.max(maximo, enVuelo); orden.push(repo);
+    await new Promise((r) => setTimeout(r, 2));
+    enVuelo--;
+    if (repo === 'B') throw new Error('Azure 400: policy');
+    return { id: repo.charCodeAt(0), link: 'L' + repo };
+  };
+  const vistos = [];
+  const res = await crearEnSerie(['A', 'B', 'C'], crearUno, (r) => vistos.push(r.repo));
+  assert.deepEqual(orden, ['A', 'B', 'C']);
+  assert.equal(maximo, 1);
+  assert.deepEqual(vistos, ['A', 'B', 'C']);
+  assert.deepEqual(plano(res), [
+    { repo: 'A', ok: true, id: 65, link: 'LA' },
+    { repo: 'B', ok: false, error: 'Azure 400: policy', link: null },
+    { repo: 'C', ok: true, id: 67, link: 'LC' },
+  ]);
+});
+
+test('crear en serie: un 409 con link del PR existente se informa con ese link', async () => {
+  const { crearEnSerie } = cargar();
+  const crearUno = async () => { const e = new Error('Ya hay un PR activo'); e.body = { link: 'L9' }; throw e; };
+  const res = await crearEnSerie(['A'], crearUno, () => {});
+  assert.deepEqual(plano(res), [{ repo: 'A', ok: false, error: 'Ya hay un PR activo', link: 'L9' }]);
+});

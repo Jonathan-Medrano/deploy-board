@@ -231,3 +231,13 @@ test('el analisis del PR llega a la pantalla con link al PR, y un error llega co
   assert.deepEqual(cv({ ...base, analisisPr: { error: 'boom', hallazgos: [] } }).analisisPr, { error: 'boom', hallazgos: [] });
   assert.equal(cv(base).analisisPr, null);
 });
+
+test('el analisis del PR lleva a la pantalla el resumen, si el sprint no esta en el PR y lo de otros sprints', () => {
+  const base = { orden: [], ambientes: [], wis: [], desvios: [] };
+  const resumen = { archivos: 26, scripts: 20, respaldos: 6, borrados: 0, porCarpeta: { S1: 12, S2: 8 } };
+  const v = construirVista({ ...base, analisisPr: { pr: { id: 7, repo: 'Api.Net', origen: 'master', destino: 'main', estado: 'completed' }, scripts: 20, resumen, sprintFuera: true, hallazgos: [], otrosSprints: [{ archivo: 'a.sql' }], avisos: [] } });
+  assert.deepEqual(v.analisisPr.resumen, resumen);
+  assert.equal(v.analisisPr.sprintFuera, true);
+  assert.deepEqual(v.analisisPr.otrosSprints, [{ archivo: 'a.sql' }]);
+  assert.equal(v.analisisPr.pr.estado, 'completed');
+});

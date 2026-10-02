@@ -24,6 +24,7 @@
   var MEDIDO = null;           /* { par, medido, repos } de la ultima medicion */
   var CONFIRMANDO = null;      /* repo con la confirmacion abierta */
   var CREANDO = null;          /* repo con el pedido de creacion en vuelo */
+  var EN_LOTE = null;          /* { repo: true } de "Crear todos" que todavia no terminaron */
 
   var selPar = document.getElementById('selPar');
   var btnMedir = document.getElementById('medirRepos');
@@ -48,8 +49,8 @@
     if (f.error) return '';
     if (f.prActivo) return '<a href="' + esc(f.prActivo.link) + '" target="_blank" rel="noopener">Abrir PR #' + esc(String(f.prActivo.id)) + '</a>';
     if (!f.pendientes) return '';
-    if (CREANDO === f.repo) return '<span class="sub">Creando…</span>';
-    var off = tablaVigente() ? '' : ' disabled';
+    if (CREANDO === f.repo || (EN_LOTE && EN_LOTE[f.repo])) return '<span class="sub">Creando…</span>';
+    var off = tablaVigente() && !EN_LOTE ? '' : ' disabled';
     if (CONFIRMANDO === f.repo) {
       return '<span class="sub">¿Crear ' + esc(TITULO_PAR[MEDIDO.par]) + ' (' + esc(f.ramas.origen) + ' → ' + esc(f.ramas.destino) + ')?</span> ' +
         '<button type="button" class="btn-actualizar" data-crear="' + esc(f.repo) + '"' + off + '>Crear</button> ' +
@@ -85,6 +86,7 @@
     if (!tablaVigente()) avisarRepos('La tabla es de ' + NOMBRE_PAR[MEDIDO.par] + ': medí ' + NOMBRE_PAR[selPar.value] + ' para crear esos PRs.');
     else if (!conAlgo.length) avisarRepos('Ningún repo tiene cambios para ' + NOMBRE_PAR[MEDIDO.par] + '.');
     else avisarRepos('');
+    pintarCrearTodos();
   }
 
   btnMedir.addEventListener('click', function(){
@@ -118,11 +120,12 @@
        ventanas emergentes. Se redirige cuando llega el link; si falla, se cierra. */
     var ventana = window.open('about:blank', '_blank');
     CONFIRMANDO = null; CREANDO = repo; pintarRepos();
+    var mensaje = '';
     pedir('/api/repos/crear-pr', { repo: repo, par: par }).then(function(r){
       if (ventana) ventana.location.href = r.link;
       var f = MEDIDO.repos.filter(function(x){ return x.repo === repo; })[0];
       if (f) f.prActivo = { id: r.id, titulo: r.titulo, link: r.link };
-      avisarRepos('Creado ' + r.titulo + ' en ' + repo + (ventana ? '.' : ': ' + r.link));
+      mensaje = 'Creado ' + r.titulo + ' en ' + repo + (ventana ? '.' : ': ' + r.link);
     }).catch(function(e){
       var link = e.body && e.body.link;
       if (ventana) { if (link) ventana.location.href = link; else ventana.close(); }
@@ -130,9 +133,84 @@
         var f = MEDIDO.repos.filter(function(x){ return x.repo === repo; })[0];
         if (f) f.prActivo = { id: Number(String(link).split('/').pop()), titulo: null, link: link };
       }
-      avisarRepos('No se creó el PR en ' + repo + ': ' + e.message);
+      mensaje = 'No se creó el PR en ' + repo + ': ' + e.message;
     }).then(function(){
-      CREANDO = null; pintarRepos();
+      CREANDO = null; pintarRepos(); avisarRepos(mensaje);
+    });
+  }
+
+  /* ---------------- crear todos ---------------- */
+  var btnTodos = document.getElementById('crearTodos');
+  var cajaConfirmar = document.getElementById('confirmarTodos');
+
+  function pintarCrearTodos(){
+    var lista = reposParaCrear(MEDIDO, selPar.value);
+    btnTodos.hidden = !lista.length && !EN_LOTE;
+    btnTodos.disabled = !!EN_LOTE || CREANDO != null;
+    btnTodos.textContent = EN_LOTE ? 'Creando…' : 'Crear todos (' + lista.length + ')';
+  }
+
+  btnTodos.addEventListener('click', function(){
+    var lista = reposParaCrear(MEDIDO, selPar.value);
+    if (!lista.length) return;
+    cajaConfirmar.innerHTML = '¿Crear ' + esc(TITULO_PAR[MEDIDO.par]) + ' en ' + lista.length + ' repos? ' +
+      '<span class="mono">' + lista.map(esc).join(' · ') + '</span>' +
+      '<div class="acciones"><button type="button" class="btn-actualizar" id="crearTodosSi">Crear ' + lista.length + ' PRs</button>' +
+      '<button type="button" class="btn-secundario" id="crearTodosNo">Cancelar</button></div>';
+    cajaConfirmar.hidden = false;
+  });
+
+  cajaConfirmar.addEventListener('click', function(ev){
+    var b = ev.target.closest('button');
+    if (!b) return;
+    cajaConfirmar.hidden = true;
+    if (b.id === 'crearTodosSi') crearTodos();
+  });
+
+  function pintarLinks(items){
+    var ul = document.getElementById('reposLinks');
+    ul.hidden = !items.length;
+    ul.innerHTML = items.map(function(r){
+      return '<li><span>' + esc(r.repo) + '</span><a href="' + esc(r.link) + '" target="_blank" rel="noopener">Abrir PR</a></li>';
+    }).join('');
+  }
+
+  function crearTodos(){
+    if (!tablaVigente()) return;
+    var par = MEDIDO.par;
+    var lista = reposParaCrear(MEDIDO, par);
+    if (!lista.length) return;
+    /* Las pestañas se abren TODAS en este click: despues de un await el navegador las bloquea.
+       Chrome suele dejar una sola por click; las que vuelvan null se ofrecen como links. */
+    var ventanas = {};
+    lista.forEach(function(repo){ ventanas[repo] = window.open('about:blank', '_blank'); });
+    EN_LOTE = {}; lista.forEach(function(repo){ EN_LOTE[repo] = true; });
+    btnMedir.disabled = true;
+    pintarLinks([]);
+    avisarRepos('Creando ' + lista.length + ' PRs de a uno…');
+    pintarRepos();
+
+    crearEnSerie(lista, function(repo){
+      return pedir('/api/repos/crear-pr', { repo: repo, par: par });
+    }, function(res){
+      delete EN_LOTE[res.repo];
+      var f = MEDIDO.repos.filter(function(x){ return x.repo === res.repo; })[0];
+      if (f && res.link) f.prActivo = { id: Number(String(res.link).split('/').pop()), titulo: TITULO_PAR[par], link: res.link };
+      var v = ventanas[res.repo];
+      if (v) { if (res.link) v.location.href = res.link; else v.close(); }
+      pintarRepos();
+    }).then(function(res){
+      EN_LOTE = null;
+      btnMedir.disabled = false;
+      var ok = res.filter(function(r){ return r.ok; });
+      var mal = res.filter(function(r){ return !r.ok; });
+      var bloqueadas = res.filter(function(r){ return r.link && !ventanas[r.repo]; });
+      var texto = 'Creados ' + ok.length + ' de ' + res.length + '.';
+      if (mal.length) texto += ' No se crearon: ' + mal.map(function(r){ return r.repo + ' (' + r.error + ')'; }).join('; ') + '.';
+      if (bloqueadas.length) texto += ' El navegador bloqueó ' + bloqueadas.length + ' pestañas: abrilas desde la lista, o permití ventanas emergentes para este panel.';
+      pintarRepos();
+      avisarRepos(texto);
+      pintarLinks(bloqueadas);
     });
   }
 })();
