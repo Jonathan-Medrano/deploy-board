@@ -33,7 +33,10 @@ const QUE = {
 // stage -> main puede llevar varios sprints juntos (el 25611 llevo 09_01 y 09_02), y eso no es
 // un error. Si es un hallazgo cuando el work item es de ESTE sprint: es el incidente que origino
 // este control, un script commiteado en la carpeta equivocada.
-export function compararPrConPanel({ scriptsPr = [], scriptsPanel = [], wis = [], enMain = {}, sprint = null }) {
+// `soloCarpetaEquivocada`: el PR no trae la carpeta medida (es de otro sprint). Ahi es esperable
+// que no traiga los scripts del sprint, asi que eso no se reporta; lo unico que se busca es lo de
+// este sprint commiteado en otra carpeta, que es justo lo que ese PR podria estar escondiendo.
+export function compararPrConPanel({ scriptsPr = [], scriptsPanel = [], wis = [], enMain = {}, sprint = null, soloCarpetaEquivocada = false }) {
   const wiDe = (id) => wis.find((w) => w.id === id) || null;
   const delSprint = new Set(wis.filter((w) => !w.fueraDelSprint).map((w) => w.id));
   const nombreDe = (p) => (p && p.nombre) || null;
@@ -42,16 +45,29 @@ export function compararPrConPanel({ scriptsPr = [], scriptsPanel = [], wis = []
   const otrosSprints = [];
   const hallazgo = (tipo, sc, donde, porque, responsable) =>
     out.push({ tipo, que: QUE[tipo], archivo: sc.archivo, wiId: sc.wiId ?? null, donde, porque, responsable: responsable || null });
+  // El panel conoce el script (tarjeta o medicion) pero el PR lo trae SOLO desde otra carpeta: se
+  // commiteo donde no va. Que el contenido coincida no lo salva: es el mismo script, mal ubicado.
+  const enOtraCarpeta = (p) => !!sprint && !!p.sprint && p.sprint !== sprint;
+  const revisarCarpeta = (matches) => {
+    if (!matches.length || !matches.every(enOtraCarpeta)) return;
+    for (const p of matches) {
+      hallazgo('otro-sprint', p, p.ruta,
+        `Es un script de ${sprint} (lo conoce el panel) pero el PR lo trae desde la carpeta ${p.sprint}: va en la carpeta de su sprint.`,
+        nombreDe(p.responsables?.commiteoEnElRepo));
+    }
+  };
 
   for (const s of scriptsPanel) {
     const porHash = s.hash != null ? scriptsPr.filter((p) => p.hash != null && p.hash === s.hash) : [];
     if (porHash.length) {
       porHash.forEach((p) => usados.add(p));
+      revisarCarpeta(porHash);
       continue;
     }
     const porNombre = scriptsPr.filter((p) => esMismoNombre(s, p.archivo));
     if (porNombre.length) {
       porNombre.forEach((p) => usados.add(p));
+      revisarCarpeta(porNombre);
       // Sin hash de uno de los dos lados no se puede afirmar que difieren: se da por visto.
       for (const p of porNombre) {
         if (s.hash == null || p.hash == null) continue;
@@ -94,7 +110,8 @@ export function compararPrConPanel({ scriptsPr = [], scriptsPanel = [], wis = []
     }
   }
 
-  return { hallazgos: out.sort((a, b) => GRAVEDAD.indexOf(a.tipo) - GRAVEDAD.indexOf(b.tipo)), otrosSprints };
+  const hallazgos = soloCarpetaEquivocada ? out.filter((h) => h.tipo === 'otro-sprint') : out;
+  return { hallazgos: hallazgos.sort((a, b) => GRAVEDAD.indexOf(a.tipo) - GRAVEDAD.indexOf(b.tipo)), otrosSprints };
 }
 
 // Lo que el PR trae en DB_Migrations, contado como lo cuenta una persona mirando la pestaña
@@ -154,13 +171,13 @@ export async function analizarPr(ado, {
   const delPr = await scriptsDelPr(ado, pr, candidatosStageToDev(cambios, carpeta), { repo, carpeta });
   const prInfo = { id: pr.id, titulo: pr.titulo, estado: pr.estado, repo, origen: pr.origen, destino: pr.destino };
 
-  // Comparar un PR contra un sprint que no trae llena la tabla de ruido: todo lo del PR sale
-  // "no medido" y todo lo del sprint "no esta en el PR". Medido el 2026-10-02 con el 25611
-  // contra Sprint_2026_10_01: 44 hallazgos, ninguno real. Se dice y no se compara.
+  // Comparar todo contra un sprint que el PR no trae llena la tabla de ruido: lo del sprint "no
+  // esta en el PR" (medido el 2026-10-02 con el 25611 contra Sprint_2026_10_01: 44 hallazgos,
+  // ninguno real). Pero no se puede dejar de mirar: si algo de ESTE sprint se commiteo en la
+  // carpeta de otro, ese PR es justo el que lo trae.
   const sprintFuera = !!sprint && delPr.length > 0 && !delPr.some((p) => p.sprint === sprint);
-  if (sprintFuera) {
-    return { pr: prInfo, scripts: delPr.length, resumen, sprintFuera, hallazgos: [], otrosSprints: [], avisos };
-  }
-  const { hallazgos, otrosSprints } = compararPrConPanel({ scriptsPr: delPr, scriptsPanel: scripts, wis, enMain, sprint });
+  const { hallazgos, otrosSprints } = compararPrConPanel({
+    scriptsPr: delPr, scriptsPanel: scripts, wis, enMain, sprint, soloCarpetaEquivocada: sprintFuera,
+  });
   return { pr: prInfo, scripts: delPr.length, resumen, sprintFuera, hallazgos, otrosSprints, avisos };
 }

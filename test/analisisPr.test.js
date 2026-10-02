@@ -140,7 +140,7 @@ test('analizarPr diffea los commits del merge y lee cada .sql en el commit de or
   assert.equal(r.pr.id, 7);
   assert.equal(r.scripts, 1);
   assert.equal(r.sprintFuera, true);
-  assert.deepEqual(r.hallazgos, []);
+  assert.deepEqual(r.hallazgos.map((h) => h.tipo), ['otro-sprint']);
   assert.deepEqual(r.avisos, []);
 });
 
@@ -215,4 +215,34 @@ test('un work item traido de fuera del sprint no cuenta como de este sprint', ()
 test('un PR ya completado avisa que la comparacion es historica', async () => {
   const r = await analizarPr(adoFalso({ pr: { estado: 'completed' }, cambios: [sql(SPRINT, 'uno.sql')] }), { prUrl: '7', repo: 'Api.Net', carpeta: CARPETA, sprint: SPRINT, scripts: [], wis: WIS });
   assert.ok(r.avisos.some((a) => /completado/.test(a)), JSON.stringify(r.avisos));
+});
+
+// "Si trae cambios en DB_Migrations del sprint anterior puede ser que la IA se haya equivocado de
+// carpeta": un script que el panel conoce (adjunto a una tarjeta del sprint) pero que el PR trae
+// SOLO desde otra carpeta es un hallazgo, aunque el contenido coincida.
+test('un script del sprint que el PR trae solo desde otra carpeta es carpeta equivocada', () => {
+  const panel = delPanel('[U-25100] - 01 - x - ALTER.sql', { hash: 'h-x', fuentes: ['adjunto'] });
+  const pr = delPr('[U-25100] - 01 - x - ALTER.sql', { hash: 'h-x', sprint: 'Sprint_2026_09_02', ruta: 'Sprint_2026_09_02/US-25100_algo/[U-25100] - 01 - x - ALTER.sql' });
+  const r = compararPrConPanel({ scriptsPr: [pr], scriptsPanel: [panel], wis: WIS, sprint: SPRINT });
+  assert.deepEqual(r.hallazgos.map((h) => h.tipo), ['otro-sprint']);
+  assert.equal(r.hallazgos[0].donde, 'Sprint_2026_09_02/US-25100_algo/[U-25100] - 01 - x - ALTER.sql');
+  assert.match(r.hallazgos[0].porque, /Sprint_2026_09_02/);
+});
+
+test('si el PR lo trae tambien desde la carpeta correcta, no es carpeta equivocada', () => {
+  const panel = delPanel('a.sql', { hash: 'h-a' });
+  const bien = delPr('a.sql', { hash: 'h-a' });
+  const copia = delPr('a.sql', { hash: 'h-a', sprint: 'Sprint_2026_09_02', ruta: 'Sprint_2026_09_02/US-1/a.sql' });
+  const r = compararPrConPanel({ scriptsPr: [bien, copia], scriptsPanel: [panel], wis: WIS, sprint: SPRINT });
+  assert.deepEqual(r.hallazgos, []);
+});
+
+test('PR sin la carpeta medida: igual detecta lo de este sprint en otra carpeta y calla lo que es esperable', async () => {
+  const perdido = `${CARPETA}/Sprint_2026_09_02/US-25100_algo/[U-25100] - 05 - perdido - ALTER.sql`;
+  const ajeno = `${CARPETA}/Sprint_2026_09_02/US-1_x/[U-1] - 01 - ajeno - ALTER.sql`;
+  const ado = adoFalso({ cambios: [{ changeType: 'add', item: { path: perdido } }, { changeType: 'add', item: { path: ajeno } }] });
+  const r = await analizarPr(ado, { prUrl: '7', repo: 'Api.Net', carpeta: CARPETA, sprint: SPRINT, scripts: [delPanel('del-sprint.sql', { fuentes: ['adjunto'] })], wis: WIS });
+  assert.equal(r.sprintFuera, true);
+  assert.deepEqual(r.hallazgos.map((h) => [h.tipo, h.archivo]), [['otro-sprint', '[U-25100] - 05 - perdido - ALTER.sql']]);
+  assert.deepEqual(r.otrosSprints.map((o) => o.archivo), ['[U-1] - 01 - ajeno - ALTER.sql']);
 });

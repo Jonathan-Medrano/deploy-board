@@ -630,15 +630,18 @@
     } else {
       cab += '<p class="pr-cab">' + a.scripts + ' scripts en el PR</p>';
     }
-    if (a.sprintFuera) {
-      var medida = (D.meta && D.meta.sprint) || 'la carpeta elegida';
-      cuerpo.innerHTML = cab + '<p class="pr-error">Este PR no trae scripts de ' + esc(medida) +
-        ': no se comparó. Elegí la carpeta de uno de los sprints que trae y volvé a medir con el PR.</p>';
-      return;
-    }
     var html = cab;
+    var medida = (D.meta && D.meta.sprint) || 'la carpeta elegida';
+    /* El PR es de otro sprint: no se le reclama lo de este, pero se revisa si algo de este sprint
+       quedo commiteado en la carpeta de otro (lo que el PR podria estar escondiendo). */
+    if (a.sprintFuera) {
+      html += '<p class="pr-aviso">Este PR no trae la carpeta de ' + esc(medida) + '. Se revisó igual si algún script de ' +
+        esc(medida) + ' está commiteado en otra carpeta. Para comparar el PR completo, elegí la carpeta de uno de los sprints que trae y volvé a medir con el PR.</p>';
+    }
     if (!hs.length) {
-      html += '<p class="vacio">Coincide: lo que trae el PR es lo que midió el panel.</p>';
+      html += '<p class="vacio">' + (a.sprintFuera
+        ? 'Ningún script de ' + esc(medida) + ' aparece commiteado en otra carpeta.'
+        : 'Coincide: lo que trae el PR es lo que midió el panel.') + '</p>';
     } else {
       html += '<div class="tabla-wrap"><table><thead><tr><th>Script</th><th>Dónde</th><th>Qué pasa</th><th>Por qué</th><th>Responsable</th></tr></thead><tbody>' +
         hs.map(function(h){
@@ -649,11 +652,11 @@
     }
     var otros = a.otrosSprints || [];
     if (otros.length) {
-      html += '<p class="pr-cab">También trae ' + otros.length + ' de otros sprints (no son de este sprint, no es un error):</p>' +
+      html += '<details><summary class="pr-cab">También trae ' + otros.length + ' de otros sprints (no son de ' + esc(medida) + ', no es un error)</summary>' +
         '<ul class="lista-dec">' + otros.map(function(o){
           return '<li><span>' + esc(o.archivo) + (o.wiId != null ? ' <span class="mono">#' + esc(String(o.wiId)) + '</span>' : '') +
             '</span><span class="mono">' + esc(o.donde || '') + '</span></li>';
-        }).join('') + '</ul>';
+        }).join('') + '</ul></details>';
     }
     cuerpo.innerHTML = html;
   }
