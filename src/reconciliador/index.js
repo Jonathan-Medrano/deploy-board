@@ -137,7 +137,62 @@ export function reconciliar({ adjuntos = [], repo = [] }) {
   // modulo y dejaba un D12 falso y la pareja sola con D5.
   unirVersionesNuevas(mapa);
 
+  // Despues de todo: solo toma lo que ningun camino mas seguro pudo emparejar.
+  unirUnicosDelWorkItem(mapa);
+
   return ordenarParaEjecucion([...mapa.values()]);
+}
+
+// Un script de datos commiteado SIN la convencion en la carpeta de la US
+// (EntregaAcopio_Reporte.sql) y el mismo script adjunto CON la convencion a la task de scripts
+// ([U-24918] - PRE - Alta de reporte ... - INSERT.sql) no comparten nombre, ni contenido, y
+// muchas veces tampoco un objeto que el parser entienda (un INSERT con variables no deja sonda).
+// Salian como dos scripts, con D5 y D6 a la vez y un CantidadScripts que no cierra. Se unen
+// cuando son el UNICO del repo sin convencion y el UNICO adjunto sin pareja de ese work item:
+// con dos de algun lado, elegir seria adivinar. Si los dos traen objetos y no comparten
+// ninguno, son scripts distintos y no se tocan. D12 dice que se unieron y como separarlos.
+function unirUnicosDelWorkItem(mapa) {
+  const soloDe = (x, fuente) => x.fuentes.length === 1 && x.fuentes[0] === fuente;
+  const repos = [...mapa.values()].filter((x) => soloDe(x, 'repo') && x.wiId != null &&
+    x.vinculadoPor === 'contenedor' && !x.esNew);
+  const adjuntos = [...mapa.values()].filter((x) => soloDe(x, 'adjunto') && x.wiId != null);
+
+  const claveObjeto = (o) => `${o.tipo}|${String(o.tabla || o.nombre || '').toLowerCase()}`;
+  const compatibles = (a, b) => {
+    const oa = a.objetos || [];
+    const ob = b.objetos || [];
+    if (!oa.length || !ob.length) return true;
+    const claves = new Set(oa.map(claveObjeto));
+    return ob.some((o) => claves.has(claveObjeto(o)));
+  };
+  const sinSonda = (x) => !(x.sondas || []).some((s) => s.tipo !== 'sin_sonda');
+
+  for (const r of repos) {
+    const delRepo = repos.filter((x) => x.wiId === r.wiId);
+    const delAdjunto = adjuntos.filter((x) => x.wiId === r.wiId);
+    if (delRepo.length !== 1 || delAdjunto.length !== 1) continue;
+    const a = delAdjunto[0];
+    if (!compatibles(a, r)) continue;
+
+    const versiones = [...a.versiones, ...r.versiones];
+    const aliases = [...new Set([...(a.aliases || []), r.id, ...(r.aliases || [])])].filter((x) => x !== a.id).sort();
+    // El adjunto es lo que se sube, pero si no deja sonda la fila quedaria en "?" en todos los
+    // ambientes. Se mide con la del repo, que hace lo mismo, y D12 dice cual se midio.
+    const medirConRepo = sinSonda(a) && !sinSonda(r);
+    mapa.delete(r.id);
+    mapa.set(a.id, {
+      ...a,
+      carpeta: a.carpeta ?? r.carpeta ?? null,
+      aliases,
+      fuentes: [...a.fuentes, 'repo'],
+      ordenPorFuente: { ...a.ordenPorFuente, repo: r.ordenPorFuente.repo },
+      responsables: { ...r.responsables, ...a.responsables },
+      versiones,
+      contenidoDistinto: new Set(versiones.map((v) => v.hash).filter(Boolean)).size > 1,
+      unidoPorWorkItem: { archivoRepo: r.archivo },
+      ...(medirConRepo ? { objetos: r.objetos, sondas: r.sondas, medidoDe: 'repo' } : {}),
+    });
+  }
 }
 
 // Dos archivos DISTINTOS de la misma fuente (01 y 02) resuelven al mismo id, porque el NN no

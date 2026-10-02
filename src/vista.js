@@ -1,6 +1,7 @@
 import { responsableDe } from './reporte.js';
 import { subidaDe } from './desvios/reglas.js';
 import { ENCARGADO_DE_EJECUTAR } from './roles.js';
+import { firmaDe } from './decisiones.js';
 
 // Que DEFINE un script decide como se lee y en que orden se mira. Un SP se reemplaza entero y
 // es barato de repetir; una columna o una tabla cambian la forma de la base y no se deshacen
@@ -21,6 +22,8 @@ export function tipoDeScript(script) {
 // bloqueantes, veredicto, desvios y agrupados se copian tal cual. Si la pantalla recalculara
 // aunque sea uno, la consola y el tablero podrian contradecirse y no habria forma de saber
 // cual de los dos miente.
+const BLOQUE_REVISAR = new Set(['D5', 'D6', 'D10']);
+
 export function construirVista(reporte, extra = {}) {
   const { org = null, proyecto = null, medido = null, sprint = null, iteracion = null, comando = null } = extra;
 
@@ -30,6 +33,8 @@ export function construirVista(reporte, extra = {}) {
     const wi = reporte.wis.find((w) => w.id === s.wiId) || null;
     return {
       id: s.id,
+      // Una marca o un ignorado se atan a este hash: si el script cambia, la decision vence.
+      hash: s.hash ?? null,
       arch: s.archivo,
       wi: s.wiId ?? null,
       pre: !!s.esPre,
@@ -53,8 +58,12 @@ export function construirVista(reporte, extra = {}) {
       enRepo: (s.fuentes || []).includes('repo'),
       // El work item no es de este sprint: se trajo aparte porque el script lo nombra.
       wiFuera: !!wi?.fueraDelSprint,
+      // Base donde se ejecuta cuando NO es fidel_db (sale del prefijo "[xxx_db] - " del nombre).
+      base: s.base ?? null,
     };
   });
+
+  const conFirma = (reporte.desvios || []).map((d) => ({ ...d, firma: firmaDe(d) }));
 
   const porTipo = {};
   for (const f of filas) if (f.tipo) porTipo[f.tipo] = (porTipo[f.tipo] || 0) + 1;
@@ -68,19 +77,43 @@ export function construirVista(reporte, extra = {}) {
       // Sin organizacion configurada no hay link: un href a medias manda al que lo aprieta a
       // una pagina que no existe, y eso se lee como "el work item no esta".
       wiBase: org && proyecto ? `${String(org).replace(/\/+$/, '')}/${proyecto}/_workitems/edit/` : null,
+      repoBase: org && proyecto && reporte.repoScripts
+        ? `${String(org).replace(/\/+$/, '')}/${proyecto}/_git/${encodeURIComponent(reporte.repoScripts.repo)}` +
+          `?path=${encodeURIComponent(reporte.repoScripts.carpeta)}&version=GB${encodeURIComponent(reporte.repoScripts.rama)}`
+        : null,
       medido, sprint, iteracion, comando, porTipo,
       total: filas.length,
       // Rama que se leyo para "Ya en rama MAIN", o null si no se evaluo. La pantalla la usa
       // para explicar por que una fila no tiene badge en vez de dejarlo mudo.
       ramaMain: reporte.ramaMain ?? null,
+      // Si el deploy del sprint ya se ejecuto (tarjeta "Scripts" cerrada). null = medicion
+      // anterior a este dato: la pantalla sigue tomando "en main" como ejecutado.
+      deploy: reporte.deploy ?? null,
     },
     filas,
-    desvios: reporte.desvios,
+    desvios: conFirma,
     personas: reporte.pendientesPorResponsable,
-    revisar: reporte.revisarAMano,
+    // Cada bloque lleva las firmas de los D5/D6/D10 que lo forman: aceptarlos todos lo saca.
+    revisar: (reporte.revisarAMano || []).map((g) => ({
+      ...g,
+      firmas: conFirma.filter((d) => BLOQUE_REVISAR.has(d.codigo) && d.wiId === g.wiId).map((d) => d.firma),
+    })),
     sinVeredicto: reporte.sinVeredicto || [],
     stageToDev: vistaStageToDev(reporte),
+    analisisPr: vistaAnalisisPr(reporte, org, proyecto),
   };
+}
+
+// null = esta medicion no pidio PR. Con error, la pantalla lo muestra en vez de una tabla vacia
+// que se leeria como "coincide todo".
+function vistaAnalisisPr(reporte, org, proyecto) {
+  const a = reporte.analisisPr;
+  if (!a) return null;
+  if (a.error) return { error: a.error, hallazgos: [] };
+  const link = org && proyecto
+    ? `${String(org).replace(/\/+$/, '')}/${proyecto}/_git/${encodeURIComponent(a.pr.repo)}/pullrequest/${a.pr.id}`
+    : null;
+  return { pr: { ...a.pr, link }, scripts: a.scripts, hallazgos: a.hallazgos };
 }
 
 // La pestaña stage -> dev: lo que la rama de stage tiene y dev no. Lo ejecuta el encargado,

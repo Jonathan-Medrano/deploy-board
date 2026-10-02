@@ -220,8 +220,23 @@ test('D8: CantidadScripts no coincide, y trae el PATCH listo', () => {
   assert.deepEqual(d8.accion, { tipo: 'setCampos', id: 1, valor: { 'Custom.CantidadScripts': 1 } });
 });
 
-test('D8 no dispara si el campo esta vacio: vacio no es un valor equivocado', () => {
-  const d = detectarDesvios({ scripts: [sc()], wis: [wi({ cantidadScripts: null })], tasks: [], estados: { a: verde }, destino: 'stage' });
+test('D8 dispara con el campo VACIO si la US tiene scripts: es el olvido mas comun (US 24900)', () => {
+  for (const vacio of [null, '']) {
+    const d = detectarDesvios({ scripts: [sc()], wis: [wi({ cantidadScripts: vacio })], tasks: [], estados: { a: verde }, destino: 'stage' });
+    const d8 = d.find((x) => x.codigo === 'D8');
+    assert.ok(d8, `sin D8 con cantidadScripts=${JSON.stringify(vacio)}`);
+    assert.match(d8.titulo, /vacio/);
+    assert.deepEqual(d8.accion, { tipo: 'setCampos', id: 1, valor: { 'Custom.CantidadScripts': 1 } });
+  }
+});
+
+test('D8 no dispara con el campo vacio si lo unico que hay es un __NEW suelto: no es un script que se sube', () => {
+  const d = detectarDesvios({ scripts: [sc({ esNew: true })], wis: [wi({ cantidadScripts: null })], tasks: [], estados: { a: verde }, destino: 'stage' });
+  assert.equal(d.some((x) => x.codigo === 'D8'), false);
+});
+
+test('D8 no cuenta un __NEW suelto contra un valor cargado', () => {
+  const d = detectarDesvios({ scripts: [sc(), sc({ id: 'b', esNew: true })], wis: [wi({ cantidadScripts: 1 })], tasks: [], estados: { a: verde, b: verde }, destino: 'stage' });
   assert.equal(d.some((x) => x.codigo === 'D8'), false);
 });
 
@@ -353,7 +368,7 @@ test('D11 señala a quien lo nombro, no al dueno de la tarjeta', () => {
 });
 
 test('sin desvios la lista viene vacia', () => {
-  const d = detectarDesvios({ scripts: [sc()], wis: [wi()], tasks: [], estados: { a: verde }, destino: 'stage' });
+  const d = detectarDesvios({ scripts: [sc()], wis: [wi({ cantidadScripts: 1 })], tasks: [], estados: { a: verde }, destino: 'stage' });
   assert.deepEqual(codigos(d), []);
 });
 
@@ -536,4 +551,37 @@ test('un __NEW sin pareja da D5 pero no D7 ni D11: su nombre es la convencion de
   const codigos = ds.map((d) => d.codigo);
   assert.ok(codigos.includes('D5'), codigos.join(','));
   for (const c of ['D7', 'D11']) assert.equal(codigos.includes(c), false, codigos.join(','));
+});
+
+test('un desvio de script lleva el work item donde esta ADJUNTO, que puede no ser el del nombre', () => {
+  const d = detectarDesvios({
+    scripts: [sc({ wiId: 1, contenedorId: 25033, fuentes: ['adjunto'] })],
+    wis: [wi({ id: 1 })], tasks: [], estados: { a: verde }, destino: 'stage',
+  });
+  const d6 = d.find((x) => x.codigo === 'D6');
+  assert.equal(d6.contenedorId, 25033);
+  assert.equal(d6.wiId, 1);
+});
+
+test('D8 cuenta contenido, no adjuntos: el mismo script con y sin PRE en dos work items es UNO (US-25155)', () => {
+  const scripts = [
+    sc({ id: 'p1', hash: 'h1', esPre: true, contenedorId: 25176 }), sc({ id: 'n1', hash: 'h1', contenedorId: 1 }),
+    sc({ id: 'p2', hash: 'h2', esPre: true, contenedorId: 25176 }), sc({ id: 'n2', hash: 'h2', contenedorId: 1 }),
+    sc({ id: 'x', hash: 'h3' }),
+  ];
+  const estados = Object.fromEntries(scripts.map((s) => [s.id, verde]));
+  assert.equal(detectarDesvios({ scripts, wis: [wi({ cantidadScripts: 3 })], tasks: [], estados, destino: 'stage' })
+    .some((x) => x.codigo === 'D8'), false, 'la US dice 3 y son 3');
+
+  const d8 = detectarDesvios({ scripts, wis: [wi({ cantidadScripts: 4 })], tasks: [], estados, destino: 'stage' })
+    .find((x) => x.codigo === 'D8');
+  assert.match(d8.detalle, /la US dice 4 y hay 3 scripts distintos \(5 adjuntos, 2 con el mismo contenido que otro\)/);
+  assert.equal(d8.declarado, 4);
+  assert.equal(d8.cuentan, 3);
+});
+
+test('D8 con el campo vacio dice que esta vacio y cuantos hay', () => {
+  const d8 = detectarDesvios({ scripts: [sc({ hash: 'h' })], wis: [wi({ cantidadScripts: null })], tasks: [], estados: { a: verde }, destino: 'stage' })
+    .find((x) => x.codigo === 'D8');
+  assert.match(d8.detalle, /la US dice nada \(campo vacio\) y hay 1 script\./);
 });

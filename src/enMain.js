@@ -17,23 +17,24 @@ import { defineModulo } from './fuentes/comun.js';
 // si ninguno de los archivos de main con ese hash tiene el nombre de este script, queda en
 // null — no se afirma nada, no se degrada a 'distinta' tampoco (el contenido SI esta en main,
 // solo que no se puede saber si es el de este script o el de otro).
+const normalizarNombre = (s) => String(s || '')
+  .toLowerCase()
+  .replace(/\.sql$/i, '')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+// Un archivo es ESTE script por nombre si se llama igual, o si es el `<X>__NEW.sql` (la copia
+// commiteada) del modulo X que el script define. Los __OLD nunca llegan aca: el lector del repo
+// los deja afuera. Lo usa tambien el analisis del PR: dos reglas de "mismo nombre" divergen.
+export function esMismoNombre(script, archivo) {
+  if (normalizarNombre(archivo) === normalizarNombre(script.archivo)) return true;
+  const m = /^(.*)__NEW\.sql$/i.exec(String(archivo || ''));
+  return !!m && defineModulo(script.objetos, m[1]);
+}
+
 export function estadoEnMain(script, archivosDeMain, { hashCompartido = false } = {}) {
   const lista = archivosDeMain || [];
-
-  const normalizar = (s) => String(s || '')
-    .toLowerCase()
-    .replace(/\.sql$/i, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const nombreScript = normalizar(script.archivo);
-  // Un archivo de main es ESTE script por nombre si se llama igual, o si es el `<X>__NEW.sql`
-  // (la copia commiteada) del modulo X que el script define. Los __OLD nunca llegan aca: el
-  // lector del repo los deja afuera.
-  const esEsteNombre = (f) => {
-    if (normalizar(f.archivo) === nombreScript) return true;
-    const m = /^(.*)__NEW\.sql$/i.exec(String(f.archivo || ''));
-    return !!m && defineModulo(script.objetos, m[1]);
-  };
+  const esEsteNombre = (f) => esMismoNombre(script, f.archivo);
 
   // Hash primero: el contenido es lo que de verdad corrio en la base, el nombre es solo una
   // etiqueta. Los hash null (script ilegible) nunca matchean entre si — dos "no se pudo leer"

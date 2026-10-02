@@ -11,7 +11,7 @@
   function guardarLista(k, v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
 
   var estado = {
-    ola:'stage', persona:null, marcas:{}, ignorados:{},
+    ola:'stage', persona:null, version:0, decisionesDanadas:false, guardando:false,
     /* Estados que el que mira decidio ESCONDER. Es una lente personal: cambia lo que se ve, no
        lo que es cierto del sprint, asi que NO toca el numero grande. Un filtro que mueve el
        contador te deja esconder los Paused y creer que hay menos bloqueantes. */
@@ -39,8 +39,13 @@
      comparando hash de contenido). Las dos cuentan igual para todo lo que sigue: el veredicto,
      los contadores y los grupos de la tabla. 'distinta' (main tiene OTRA version) NO cuenta:
      ese archivo especifico todavia no llego. */
-  function yaSubido(f){ return !!estado.marcas[f.id] || f.main === 'igual'; }
-  function ignorado(f){ return !!estado.ignorados[f.id]; }
+  /* Estar en main NO es haber corrido en produccion: el stage -> main se mergea antes del
+     deploy. "En main" cuenta como hecho recien cuando la tarjeta "Scripts" del sprint esta
+     cerrada. Una medicion vieja no trae el dato y conserva la regla anterior. */
+  function deployHecho(){ return !D.meta.deploy || D.meta.deploy.hecho; }
+  function enMainSinEjecutar(f){ return f.main === 'igual' && !f.marca && !deployHecho(); }
+  function yaSubido(f){ return !!f.marca || (f.main === 'igual' && deployHecho()); }
+  function ignorado(f){ return !!f.ignorado; }
   function enStage(f){ return f.est[D.meta.destino] === 'OK'; }
   /* Un work item cerrado (se asume en main) o pausado (no se ejecuta) no es parte de la subida:
      no bloquea, no queda pendiente, no "va" ni "queda afuera". Tiene su propio grupo al final. */
@@ -83,6 +88,7 @@
     if (yaSubido(f)) return 'g';
     if (bloquea(f)) return 'b';
     var tiene = D.desvios.some(function(d){
+      if (d.estado === 'aceptado') return false;
       return (d.scriptId === f.id) || (d.scriptId == null && d.wiId != null && d.wiId === f.wi);
     });
     if (tiene) return 'a';
@@ -162,6 +168,17 @@
        de dejar la columna vacia sin explicacion. Texto fijo, sin datos interpolados. */
     if (!D.meta.ramaMain) {
       lineas.push('La rama main no se evaluó en esta medición (sin carpeta de sprint, o medición anterior a esta versión): ningún script tiene el badge de MAIN.');
+    }
+    var dep = D.meta.deploy;
+    if (dep && !dep.hecho) {
+      var sinEjecutar = todas.filter(function(f){ return !fueraDeLaSubida(f) && enMainSinEjecutar(f); }).length;
+      var tarjeta = dep.tarjetas && dep.tarjetas.length
+        ? 'la tarjeta Scripts del sprint (' + dep.tarjetas.map(function(t){ return '#' + esc(String(t.id)) + ' en ' + esc(t.estado || '?'); }).join(', ') + ') sigue abierta'
+        : 'no se encontró la tarjeta Scripts del sprint';
+      if (sinEjecutar) {
+        lineas.push('<b>' + sinEjecutar + '</b> ' + (sinEjecutar === 1 ? 'script ya está' : 'scripts ya están') +
+          ' en la rama main pero ' + tarjeta + ': siguen como pendientes hasta que se ejecuten en producción y se cierre la tarjeta.');
+      }
     }
     ad.hidden = lineas.length === 0;
     ad.innerHTML = lineas.join('<br><br>');
@@ -256,7 +273,8 @@
      sin copia en el repo no hay contra que confirmarlo. Un pausado que ya corrio es D13. */
   function notaDeSubida(f){
     if (f.subida === 'cerrado') {
-      if (f.main === 'igual' || estado.marcas[f.id]) return { txt:'Confirmado en main', cls:'ok' };
+      if (yaSubido(f)) return { txt:'Confirmado en main', cls:'ok' };
+      if (enMainSinEjecutar(f)) return { txt:'En main, falta ejecutar en producción', cls:'aviso' };
       if (!f.enRepo) return { txt:'Cerrado; no se puede confirmar en main: nunca se commiteó', cls:'' };
       return { txt:'Cerrado pero no se encontró en main', cls:'aviso' };
     }
@@ -267,8 +285,14 @@
     return null;
   }
 
+  function etiquetaBase(f){
+    return f.base
+      ? '<em class="otra-base" title="Este script se ejecuta en ' + esc(f.base) + ', no en fidel_db: el panel no lo mide contra dev ni stage.">' + esc(f.base) + '</em>'
+      : '';
+  }
+
   function filaHTML(f, numero, nota){
-    var m = estado.marcas[f.id];
+    var m = f.marca;
     var fueraSprint = f.wiFuera
       ? '<em class="fuera-sprint" title="El work item no está en este sprint: se trajo aparte porque el script lo nombra.">fuera del sprint</em>'
       : '';
@@ -299,8 +323,10 @@
        contenido contra la rama main, el otro lo tilda una persona. Que se vean distintos evita
        que alguien lea el badge como "ya lo marque yo" cuando en realidad nadie lo toco. */
     var badgeMain = '';
-    if (f.main === 'igual') {
-      badgeMain = '<span class="badge-main igual" title="El archivo ya esta en la rama main del repo, con el mismo contenido: segun la regla del equipo, ya corrio en produccion.">Ya en rama MAIN</span>';
+    if (f.main === 'igual' && deployHecho()) {
+      badgeMain = '<span class="badge-main igual" title="El archivo ya esta en la rama main del repo, con el mismo contenido, y la tarjeta Scripts del sprint esta cerrada: ya corrio en produccion.">Ya en rama MAIN</span>';
+    } else if (f.main === 'igual') {
+      badgeMain = '<span class="badge-main distinta" title="El archivo ya esta en la rama main, pero la tarjeta Scripts del sprint sigue abierta: el deploy todavia no se ejecuto en produccion.">En MAIN, falta ejecutar</span>';
     } else if (f.main === 'distinta') {
       badgeMain = '<span class="badge-main distinta" title="Hay un archivo con este nombre en main, pero con OTRO contenido: la version que vas a subir todavia no llego.">En MAIN, pero otra versión</span>';
     }
@@ -309,14 +335,17 @@
       '<label class="marca' + (m ? ' puesta' : '') + '">' +
         '<input type="checkbox" data-id="' + esc(f.id) + '"' + (m ? ' checked' : '') + '>' +
         '<span>Corrió en main' + (m ? '<span class="quien">' + esc(quien) + '</span>' : '') + '</span>' +
-      '</label>';
+      '</label>' +
+      (f.marcaVencida ? '<span class="vencida" title="Alguien lo marcó, pero el script cambió desde entonces: la marca no aplica a esta versión.">marcado sobre otra versión</span>' : '');
 
     var ign = ignorado(f);
+    var porQue = ign ? ' — ' + (f.ignorado.por || 'alguien') + (f.ignorado.fecha ? ' · ' + f.ignorado.fecha : '') + (f.ignorado.motivo ? ': ' + f.ignorado.motivo : '') : '';
     var ignCell =
       '<button type="button" class="ign" data-id="' + esc(f.id) + '"' +
-        ' title="' + (ign ? 'Volver a tenerlo en cuenta' : 'No tener en cuenta este script para la subida') + '"' +
+        ' title="' + esc(ign ? 'Volver a tenerlo en cuenta' + porQue : 'No tener en cuenta este script para la subida') + '"' +
         ' aria-label="' + (ign ? 'Volver a tener en cuenta' : 'No tener en cuenta') + '">' +
-        (ign ? '↺' : '✕') + '</button>';
+        (ign ? '↺' : '✕') + '</button>' +
+      (f.ignoradoVencido ? '<span class="vencida" title="Se había dejado afuera, pero el script cambió desde entonces.">ignorado sobre otra versión</span>' : '');
 
     var clases = [sevDeFila(f)];
     if (f.pre) clases.push('fila-pre');
@@ -334,7 +363,7 @@
       '<td class="wi">' + wiCell + '</td>' +
       /* El nombre de archivo y los objetos que toca son para cuando hay que buscarlo, no para
          leer la lista: van en el tooltip, no en la fila. */
-      '<td class="scriptname" title="' + esc(f.arch + ((f.obj && f.obj.length) ? '\n' + f.obj.join(' · ') : '')) + '">' + esc(f.desc) +
+      '<td class="scriptname" title="' + esc(f.arch + ((f.obj && f.obj.length) ? '\n' + f.obj.join(' · ') : '')) + '">' + esc(f.desc) + etiquetaBase(f) +
         (nota ? '<span class="nota-subida' + (nota.cls ? ' ' + nota.cls : '') + '">' + esc(nota.txt) + '</span>' : '') + '</td>' +
       '<td class="tipo-cell"><span class="badge t-' + (f.tipo || 'otro') + '" title="' + esc(TIPOS[f.tipo || 'otro'].ayuda) + '">' +
         esc(TIPOS[f.tipo || 'otro'].corto) + '</span><span class="acc">' + esc(f.acc || '') + '</span></td>' +
@@ -491,7 +520,8 @@
         g.pendientes.length + (g.pendientes.length === 1 ? ' pendiente' : ' pendientes') + '</span>' +
         '</summary><ul class="pend">' +
         g.pendientes.map(function(p){
-          return '<li><span class="sev ' + (SEV[p.severidad] || 'm') + '"></span><div><b>' + esc(p.accion) + '</b>' + motivoHTML(p.motivos) + '</div></li>';
+          return '<li><span class="sev ' + (SEV[p.severidad] || 'm') + '"></span><div><b>' + esc(p.accion) + '</b>' + motivoHTML(p.motivos) +
+            '<div class="pend-acciones">' + linkArreglo(p) + botonAceptar(p.firmas, p.accion) + '</div></div></li>';
         }).join('') + '</ul></details>';
     }).join('');
   }
@@ -518,11 +548,91 @@
         '<span class="conteo">tarjeta <b>' + r.enLaTarjeta + '</b> · repo <b>' + r.enElRepo + '</b></span></summary>' +
         '<div class="rev-body"><ul>' + li('solo tarjeta', r.soloEnLaTarjeta) + li('solo repo', r.soloEnElRepo) + num + '</ul>' +
         '<div class="conteo">Quien lo tiene que revisar: <b>' + esc(r.responsable || 'sin identificar') + '</b></div>' +
+        botonAceptar(r.firmas, 'US ' + r.wiId + ': la tarjeta y el repo no coinciden') +
         '</div></details>';
     }).join('');
   }
 
+  /* El link lleva a donde se HACE el cambio: aceptar deja el desvio como esta, esto lo arregla. */
+  function linkArreglo(p){
+    var d = p.donde;
+    if (!d) return '';
+    var href = null, txt = null;
+    if (d.repo) {
+      href = D.meta.repoBase;
+      txt = 'Abrir la carpeta del sprint en el repo';
+    } else if (d.wi != null && ORG) {
+      href = ORG + d.wi;
+      txt = (d.que === 'task' ? 'Abrir la task ' : 'Abrir el work item ') + d.wi;
+    }
+    if (!href) return '';
+    return '<a class="btn-dec arreglar" href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(txt) + ' ↗</a>';
+  }
+
+  function botonAceptar(firmas, que){
+    if (!firmas || !firmas.length) return '';
+    return '<button type="button" class="btn-dec aceptar" data-firmas="' + esc(firmas.join(',')) + '" data-que="' + esc(que) + '">Aceptar como está</button>';
+  }
+
+  /* Lo aceptado no desaparece: queda tachado, con quién, cuándo y por qué, y se puede
+     reabrir. Una aceptación que no se ve es igual a un desvío borrado. */
+  function pintarAceptados(){
+    var acep = (D.desvios || []).filter(function(d){ return d.estado === 'aceptado'; });
+    document.getElementById('secAceptados').hidden = !acep.length;
+    document.getElementById('aceptadosCuenta').textContent = acep.length ? String(acep.length) : '';
+    document.getElementById('aceptados').innerHTML = acep.map(function(d){
+      var a = d.aceptado || {};
+      return '<li><div><s>' + esc(d.codigo + ' · ' + d.titulo) + '</s><div class="motivo">' + esc(d.detalle || '') + '</div>' +
+        '<div class="quien-acepto">' + esc((a.por || 'alguien') + (a.fecha ? ' · ' + a.fecha : '') + ': ' + (a.motivo || '')) + '</div></div>' +
+        '<button type="button" class="btn-dec reabrir" data-firma="' + esc(d.firma) + '">Reabrir</button></li>';
+    }).join('');
+  }
+
+  /* "Resuelto" no es un botón: es lo que estaba en la medición anterior de este sprint y en
+     esta ya no está. */
+  function pintarResueltos(){
+    var res = D.resueltos || [];
+    document.getElementById('secResueltos').hidden = !res.length;
+    document.getElementById('resueltosCuenta').textContent = res.length ? String(res.length) : '';
+    document.getElementById('resueltos').innerHTML = res.map(function(d){
+      return '<li><div><b>' + esc(d.codigo + ' · ' + d.titulo) + '</b><div class="motivo">' + esc(d.detalle || '') + '</div></div></li>';
+    }).join('');
+  }
+
+  /* ---------------- análisis del PR stage -> main ---------------- */
+  /* Sale con la medición que lo pidió. Sin hallazgos se dice "coincide" con cuántos scripts
+     trajo el PR: una tabla vacía sola no distingue "coincide" de "no se comparó". */
+  function pintarAnalisisPr(){
+    var a = D && D.analisisPr;
+    var sec = document.getElementById('secPr');
+    sec.hidden = !a;
+    if (!a) return;
+    var cuerpo = document.getElementById('analisisPr');
+    var cuenta = document.getElementById('prCuenta');
+    if (a.error) {
+      cuenta.textContent = '';
+      cuerpo.innerHTML = '<p class="pr-error">No se pudo analizar el PR: ' + esc(a.error) + '.</p>';
+      return;
+    }
+    var hs = a.hallazgos || [];
+    cuenta.textContent = hs.length ? String(hs.length) : '';
+    var nombrePr = 'PR #' + esc(String(a.pr.id)) + (a.pr.titulo ? ' · ' + esc(a.pr.titulo) : '');
+    var cab = '<p class="pr-cab">' + (a.pr.link ? '<a href="' + esc(a.pr.link) + '" target="_blank" rel="noopener">' + nombrePr + '</a>' : nombrePr) +
+      ' · <span class="mono">' + esc(a.pr.origen) + ' → ' + esc(a.pr.destino) + '</span> · ' + a.scripts + ' scripts en el PR</p>';
+    if (!hs.length) {
+      cuerpo.innerHTML = cab + '<p class="vacio">Coincide: lo que trae el PR es lo que midió el panel.</p>';
+      return;
+    }
+    cuerpo.innerHTML = cab + '<div class="tabla-wrap"><table><thead><tr><th>Script</th><th>Dónde</th><th>Qué pasa</th><th>Por qué</th><th>Responsable</th></tr></thead><tbody>' +
+      hs.map(function(h){
+        var wi = h.wiId != null ? '<div class="mono">#' + esc(String(h.wiId)) + '</div>' : '';
+        return '<tr class="b"><td>' + esc(h.archivo) + wi + '</td><td class="mono">' + esc(h.donde || '') + '</td><td>' + esc(h.que) +
+          '</td><td>' + esc(h.porque) + '</td><td>' + esc(h.responsable || 'sin responsable') + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
   function pintarTodo(){
+    pintarAnalisisPr();
     document.getElementById('contenido').classList.toggle('modo-s2d', estado.ola === 'stagedev');
     pintarCabecera();
     if (estado.ola === 'stagedev') { pintarResumenS2D(); pintarTablaS2D(); return; }
@@ -563,7 +673,7 @@
     return '<tr class="' + (faltaEnDev(f) ? 'b' : 'subido') + (f.pre ? ' fila-pre' : '') + '">' +
       '<td class="num">' + numero + '</td>' +
       '<td class="wi">' + wiCell + '</td>' +
-      '<td class="scriptname" title="' + esc(f.arch + ((f.obj && f.obj.length) ? '\n' + f.obj.join(' · ') : '')) + '">' + esc(f.desc) +
+      '<td class="scriptname" title="' + esc(f.arch + ((f.obj && f.obj.length) ? '\n' + f.obj.join(' · ') : '')) + '">' + esc(f.desc) + etiquetaBase(f) +
         (f.origen === 'sprint' ? '<span class="nota-subida aviso">Ya está en la rama dev: el merge no lo trae, hay que ejecutarlo</span>' : '') + '</td>' +
       '<td class="tipo-cell"><span class="badge t-' + t + '" title="' + esc(TIPOS[t].ayuda) + '">' + esc(TIPOS[t].corto) + '</span><span class="acc">' + esc(f.acc || '') + '</span></td>' +
       '<td class="amb ' + claseAmb(f.est.dev) + '">' + esc(f.est.dev) + '</td>' +
@@ -618,6 +728,8 @@
     pintarEstados();
     pintarFiltros();
     pintarRevisar();
+    pintarAceptados();
+    pintarResueltos();
     pintarTodo();
   }
 
@@ -643,7 +755,11 @@
   function peticion(url, opciones){
     return fetch(url, opciones).then(function(r){
       return r.json().catch(function(){ return {}; }).then(function(body){
-        if (!r.ok) throw new Error((body && body.error) || ('Error ' + r.status));
+        if (!r.ok) {
+          var err = new Error((body && body.error) || ('Error ' + r.status));
+          err.status = r.status; err.body = body;
+          throw err;
+        }
         return body;
       });
     });
@@ -658,11 +774,11 @@
     pintarTodo();
   });
 
-  /* Orden de ejecución viene abierta y las otras dos plegadas; después cada una recuerda
-     cómo la dejaste. */
+  /* Orden de ejecución y el análisis del PR vienen abiertos y el resto plegado; después cada
+     una recuerda cómo la dejaste. */
   Array.prototype.forEach.call(document.querySelectorAll('details.seccion'), function(d){
     var k = 'deployboard.sec.' + d.dataset.sec;
-    d.open = leerPref(k, d.dataset.sec === 'orden');
+    d.open = leerPref(k, d.dataset.sec === 'orden' || d.dataset.sec === 'pr');
     d.addEventListener('toggle', function(){ guardarPref(k, d.open); });
   });
 
@@ -717,57 +833,101 @@
 
     var b = e.target.closest('.ign[data-id]');
     if (!b) return;
-    var id = b.dataset.id, poner = !estado.ignorados[id];
-    var prevMarcas = estado.marcas, prevIgnorados = estado.ignorados;
-
-    estado.ignorados = Object.assign({}, estado.ignorados);
-    if (poner) estado.ignorados[id] = { fecha:hoy(), por: (CONFIG && CONFIG.quien) || null, motivo:'' };
-    else delete estado.ignorados[id];
-    avisar('');
-    pintarTodo();
-
-    peticion('/api/marcas', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ tipo:'ignorado', id:id, poner:poner }),
-    }).then(function(nuevo){
-      estado.marcas = nuevo.marcas || {};
-      estado.ignorados = nuevo.ignorados || {};
-      pintarTodo();
-    }).catch(function(err){
-      estado.marcas = prevMarcas; estado.ignorados = prevIgnorados;
-      avisar('No se pudo guardar la exclusión: ' + err.message + '.');
-      pintarTodo();
-    });
+    var f = D.filas.filter(function(x){ return x.id === b.dataset.id; })[0];
+    if (!f) return;
+    if (ignorado(f)) { decidir('ignorado', [f.id], false, ''); return; }
+    pedirMotivo('Por qué no va en esta subida: ' + f.arch, function(motivo){ decidir('ignorado', [f.id], true, motivo); });
   });
 
   tbody.addEventListener('change', function(e){
     var cb = e.target.closest('input[type="checkbox"][data-id]');
     if (!cb) return;
-    var id = cb.dataset.id, marcar = cb.checked;
-    var prevMarcas = estado.marcas, prevIgnorados = estado.ignorados;
-
-    /* Pintado optimista: esperar la confirmacion del servidor deja la pantalla quieta despues
-       del click y eso se lee como que la marca no funciono. Si el guardado falla se revierte
-       y se dice por que, en vez de dejar una marca que no existe. */
-    estado.marcas = Object.assign({}, estado.marcas);
-    if (marcar) estado.marcas[id] = { subidoAMain:true, fecha:hoy(), por: (CONFIG && CONFIG.quien) || null };
-    else delete estado.marcas[id];
-    avisar('');
-    pintarTodo();
-
-    peticion('/api/marcas', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ tipo:'marca', id:id, poner:marcar }),
-    }).then(function(nuevo){
-      estado.marcas = nuevo.marcas || {};
-      estado.ignorados = nuevo.ignorados || {};
-      pintarTodo();
-    }).catch(function(err){
-      estado.marcas = prevMarcas; estado.ignorados = prevIgnorados;
-      avisar('No se pudo guardar la marca: ' + err.message + '.');
-      pintarTodo();
-    });
+    decidir('marca', [cb.dataset.id], cb.checked, '');
   });
+
+  document.getElementById('personas').addEventListener('click', clickDeDecision);
+  document.getElementById('revisar').addEventListener('click', clickDeDecision);
+  document.getElementById('aceptados').addEventListener('click', clickDeDecision);
+
+  function clickDeDecision(e){
+    var ac = e.target.closest('.aceptar[data-firmas]');
+    if (ac) {
+      e.preventDefault();
+      var firmas = ac.dataset.firmas.split(',');
+      pedirMotivo('Por qué se acepta así: ' + ac.dataset.que, function(motivo){ decidir('aceptado', firmas, true, motivo); });
+      return;
+    }
+    var re = e.target.closest('.reabrir[data-firma]');
+    if (re) decidir('aceptado', [re.dataset.firma], false, '');
+  }
+
+  /* El motivo es obligatorio para ignorar y aceptar: el servidor rechaza uno vacío, así que
+     se pide antes de mandar en vez de dejar que el guardado falle. */
+  var formMotivo = document.getElementById('pedirMotivo');
+  var alGuardarMotivo = null;
+  function pedirMotivo(titulo, alGuardar){
+    alGuardarMotivo = alGuardar;
+    document.getElementById('pedirMotivoTitulo').textContent = titulo;
+    var inp = document.getElementById('pedirMotivoTexto');
+    inp.value = '';
+    formMotivo.hidden = false;
+    inp.focus();
+  }
+  function cerrarMotivo(){ formMotivo.hidden = true; alGuardarMotivo = null; }
+  formMotivo.addEventListener('submit', function(e){
+    e.preventDefault();
+    var t = document.getElementById('pedirMotivoTexto').value.trim();
+    if (!t) return;
+    var cb = alGuardarMotivo;
+    cerrarMotivo();
+    if (cb) cb(t);
+  });
+  document.getElementById('pedirMotivoCancelar').addEventListener('click', cerrarMotivo);
+
+  function sprintDeD(){ return D.meta.sprint || D.meta.iteracion || 'sin-sprint'; }
+
+  function tomarRespuesta(body){
+    D = body.vista;
+    estado.version = typeof body.version === 'number' ? body.version : null;
+    estado.decisionesDanadas = !!body.decisionesDanadas;
+  }
+
+  /* Varias claves (un pendiente que junta D2/D3/D4) se guardan una por una, cada una sobre la
+     versión que dejó la anterior. Un 409 por versión es que otro guardó mientras tanto: se
+     toma lo suyo y se reintenta UNA vez; sin tope, con alguien decidiendo a la par, es un loop. */
+  function decidir(tipo, claves, poner, motivo){
+    if (estado.guardando) return;
+    if (estado.decisionesDanadas) {
+      avisar(AVISO_DANADAS);
+      pintarTodo();
+      return;
+    }
+    estado.guardando = true;
+    avisar('');
+
+    function enviar(clave, reintentos){
+      return peticion('/api/decisiones', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ sprint:sprintDeD(), tipo:tipo, clave:clave, poner:poner, motivo:motivo, version:estado.version }),
+      }).catch(function(err){
+        if (err.status === 409 && err.body && err.body.motivo === 'version' && reintentos > 0) {
+          tomarRespuesta(err.body);
+          return enviar(clave, reintentos - 1);
+        }
+        throw err;
+      });
+    }
+
+    claves.reduce(function(p, clave){
+      return p.then(function(){ return enviar(clave, 1).then(tomarRespuesta); });
+    }, Promise.resolve()).catch(function(err){
+      if (err.status === 409 && err.body && err.body.motivo === 'danado') estado.decisionesDanadas = true;
+      avisar('No se pudo guardar: ' + err.message + '.');
+    }).then(function(){
+      estado.guardando = false;
+      refrescarConD();
+    });
+  }
 
   /* ---------------- selector de sprint ---------------- */
   function iteracionSeleccionada(){
@@ -876,11 +1036,11 @@
   });
 
   /* ---------------- medir de verdad ---------------- */
-  function ejecutarMedicion(boton){
+  function ejecutarMedicion(boton, prUrl){
     var original = boton.textContent;
     boton.disabled = true;
     boton.textContent = 'Midiendo...';
-    avisar('Midiendo: consultando Azure DevOps y las bases de dev y stage. Puede tardar decenas de segundos.');
+    avisar('Midiendo: consultando Azure DevOps y las bases de dev y stage' + (prUrl ? ', y comparando el PR' : '') + '. Puede tardar decenas de segundos.');
 
     /* La carpeta viaja SIEMPRE que el selector cargo, aunque este vacia: vacia significa
        "sin repo", y omitirla hacia que el servidor usara la del .env. Si el selector no cargo
@@ -889,24 +1049,30 @@
     var elS = document.getElementById('selSprint'), elC = document.getElementById('selCarpeta');
     if (elS && elS.value) cuerpo.iteracion = elS.value;
     if (elC && SPRINTS) cuerpo.sprint = elC.value || null;
+    if (prUrl) cuerpo.prUrl = prUrl;
 
     peticion('/api/medir', {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cuerpo),
     }).then(function(body){
-      D = body.vista;
-      estado.marcas = (body.marcas && body.marcas.marcas) || {};
-      estado.ignorados = (body.marcas && body.marcas.ignorados) || {};
+      tomarRespuesta(body);
       mostrarContenido();
       refrescarConD();
       pintarAvisoDesfasado();
-      avisar((body.avisos && body.avisos.length) ? body.avisos.join(' ') : '');
+      var avisos = (body.avisos || []).slice();
+      if (body.decisionesDanadas) avisos.unshift(AVISO_DANADAS);
+      avisar(avisos.join(' '));
     }).catch(function(err){
       avisar('No se pudo medir: ' + err.message + '.');
     }).then(function(){
-      boton.disabled = false;
+      boton.disabled = boton === btnPr ? !inputPr.value.trim() : false;
       boton.textContent = original;
     });
   }
+
+  var inputPr = document.getElementById('prUrl');
+  var btnPr = document.getElementById('medirConPr');
+  inputPr.addEventListener('input', function(){ btnPr.disabled = !inputPr.value.trim(); });
+  btnPr.addEventListener('click', function(){ ejecutarMedicion(this, inputPr.value.trim()); });
 
   document.getElementById('medirAhora').addEventListener('click', function(){ ejecutarMedicion(this); });
   document.getElementById('medirElegido').addEventListener('click', function(){ ejecutarMedicion(this); });
@@ -944,9 +1110,7 @@
       return;
     }
     if (!info.hayCambios) { caja.hidden = true; return; }
-    var msg = 'Hay una versión nueva del sistema (' + info.detras + (info.detras === 1 ? ' cambio' : ' cambios') + ')';
-    if (info.adelante > 0) msg += ' · esta copia tiene cambios locales: el update va a fallar hasta que los resuelvas.';
-    texto.textContent = msg;
+    texto.textContent = 'Hay una versión nueva del sistema (' + info.detras + (info.detras === 1 ? ' archivo' : ' archivos') + ')';
     boton.hidden = false;
     boton.disabled = false;
     boton.textContent = 'Actualizar sistema';
@@ -963,7 +1127,7 @@
     var intervalo = setInterval(function(){
       if (Date.now() - inicio > 60000) {
         clearInterval(intervalo);
-        texto.textContent = 'El sistema no volvió solo: cerrá y abrí de nuevo desde el Escritorio.';
+        texto.textContent = 'El sistema no volvió solo: cerrá la ventana y abrí de nuevo «Abrir deploy-board.bat».';
         return;
       }
       fetch('/api/ping').then(function(r){
@@ -991,18 +1155,24 @@
     });
   });
 
+  var AVISO_DANADAS = 'El archivo de decisiones está dañado y no se pudo leer: la tabla se ve sin marcas ni aceptaciones, y no se guarda nada hasta que alguien lo revise a mano.';
+  var AVISO_MARCAS_VIEJAS = 'Hay un marcas.json de una versión anterior. No se aplica: sus ids cambiaron y no guardaban qué versión del script se marcó. Volvé a marcar lo que ya subiste; el archivo viejo queda intacto.';
+
   /* ---------------- carga inicial ---------------- */
   function cargar(){
     Promise.all([ peticion('/api/vista'), peticion('/api/config') ]).then(function(res){
       var vistaResp = res[0]; CONFIG = res[1];
       pintarPie();
       if (vistaResp.nuncaSeMidio) { mostrarVacio(); return; }
-      D = vistaResp.vista;
-      estado.marcas = (vistaResp.marcas && vistaResp.marcas.marcas) || {};
-      estado.ignorados = (vistaResp.marcas && vistaResp.marcas.ignorados) || {};
+      tomarRespuesta(vistaResp);
       mostrarContenido();
       refrescarConD();
       pintarAvisoDesfasado();
+      if (vistaResp.decisionesDanadas) avisar(AVISO_DANADAS);
+      else if (vistaResp.hayMarcasViejas && !leerPref('deployboard.avisoMarcasViejas', false)) {
+        guardarPref('deployboard.avisoMarcasViejas', true);
+        avisar(AVISO_MARCAS_VIEJAS);
+      }
     }).catch(function(err){
       avisar('No se pudo cargar la pantalla: ' + err.message + '.');
     });

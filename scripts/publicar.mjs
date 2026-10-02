@@ -4,31 +4,28 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-// El repo publico es un ESPEJO de distribucion, no el repo de desarrollo. El desarrollo vive
-// en el workspace privado, donde la historia menciona sprints, work items y companeros por
-// nombre. Publicar con `git subtree push` arrastraria toda esa historia, y una vez publica no
-// se saca mas. Por eso el espejo tiene su propia historia, lineal, hecha de snapshots.
+// El sistema se distribuye como la carpeta Tools/Paneles/deploy-board de FidelWorkSpace. El
+// desarrollo vive en el workspace privado, donde la historia menciona sprints, work items y
+// companeros por nombre: por eso se publica una COPIA de los archivos, nunca la historia.
 //
-// Lineal y no force-push a proposito: los devs actualizan con `git pull --ff-only`, y un
-// force-push les rompe el pull a todos a la vez.
+// Este script solo deja la carpeta al dia en el clon local de FidelWorkSpace. El commit y el PR
+// a main los hace una persona: cuando se mergea, cada uno lo recibe al abrir el panel.
 
 const AQUI = path.dirname(fileURLToPath(import.meta.url));
 const ORIGEN = path.join(AQUI, '..');
-const REMOTO = process.env.DEPLOY_BOARD_REMOTO || 'https://github.com/Jonathan-Medrano/deploy-board.git';
+const DESTINO = process.env.DEPLOY_BOARD_PUBLICAR_EN
+  || path.join(os.homedir(), 'Desktop', 'FidelWorkSpace', 'Tools', 'Paneles', 'deploy-board');
 
+// Lo que no es codigo y vive solo en cada maquina: ni se copia ni se borra del destino.
 const EXCLUIDOS = new Set(['.git', 'node_modules', 'estado', '.env']);
-const inicial = process.argv.includes('--inicial');
-const mensaje = (() => {
-  const i = process.argv.indexOf('--mensaje');
-  return i >= 0 ? process.argv[i + 1] : 'chore: version nueva';
-})();
+const excluido = (nombre) => EXCLUIDOS.has(nombre) || nombre.endsWith('.log');
 
 const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
 
 function copiar(desde, hasta) {
   fs.mkdirSync(hasta, { recursive: true });
   for (const e of fs.readdirSync(desde, { withFileTypes: true })) {
-    if (EXCLUIDOS.has(e.name) || e.name.endsWith('.log')) continue;
+    if (excluido(e.name)) continue;
     const a = path.join(desde, e.name), b = path.join(hasta, e.name);
     if (e.isDirectory()) copiar(a, b);
     else fs.copyFileSync(a, b);
@@ -37,36 +34,39 @@ function copiar(desde, hasta) {
 
 function vaciar(dir) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (e.name === '.git') continue;
+    if (excluido(e.name)) continue;
     fs.rmSync(path.join(dir, e.name), { recursive: true, force: true });
   }
 }
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'publicar-'));
-try {
-  if (inicial) {
-    // Historia nueva desde cero. Se hace UNA sola vez, antes de que alguien clone: despues,
-    // un force-push le rompe el `pull --ff-only` a todo el equipo al mismo tiempo.
-    fs.mkdirSync(path.join(tmp, 'repo'));
-    const repo = path.join(tmp, 'repo');
-    git(['init', '-q', '-b', 'main'], repo);
-    copiar(ORIGEN, repo);
-    git(['add', '-A'], repo);
-    git(['commit', '-q', '-m', mensaje], repo);
-    git(['push', '--force', REMOTO, 'main'], repo);
-    console.log('Publicado con historia nueva.');
-  } else {
-    const repo = path.join(tmp, 'repo');
-    git(['clone', '-q', REMOTO, repo], tmp);
-    vaciar(repo);
-    copiar(ORIGEN, repo);
-    git(['add', '-A'], repo);
-    const cambios = git(['status', '--porcelain'], repo).trim();
-    if (!cambios) { console.log('No hay nada nuevo para publicar.'); process.exit(0); }
-    git(['commit', '-q', '-m', mensaje], repo);
-    git(['push', REMOTO, 'main'], repo);
-    console.log('Publicado:\n' + cambios);
-  }
-} finally {
-  fs.rmSync(tmp, { recursive: true, force: true });
+// Corrido desde la copia distribuida, ORIGEN y DESTINO son la misma carpeta: vaciar el destino
+// borraria el sistema entero antes de copiar nada. Se publica solo desde la copia de desarrollo.
+let origenDeLaCopia = '';
+try { origenDeLaCopia = git(['remote', 'get-url', 'origin'], ORIGEN).trim(); } catch { /* sin repo */ }
+if (path.resolve(ORIGEN) === path.resolve(DESTINO) || origenDeLaCopia.includes('FidelWorkSpace')) {
+  console.error('Esta es la copia distribuida en FidelWorkSpace: se publica desde la copia de desarrollo, no desde aca.');
+  process.exit(1);
+}
+
+const padre = path.dirname(DESTINO);
+if (!fs.existsSync(padre)) {
+  console.error(`No existe ${padre}. Cloná FidelWorkSpace o indicá la carpeta con DEPLOY_BOARD_PUBLICAR_EN.`);
+  process.exit(1);
+}
+const origen = git(['remote', 'get-url', 'origin'], padre).trim();
+if (!origen.includes('FidelWorkSpace')) {
+  console.error(`${padre} no es un clon de FidelWorkSpace (origin: ${origen}).`);
+  process.exit(1);
+}
+
+fs.mkdirSync(DESTINO, { recursive: true });
+vaciar(DESTINO);
+copiar(ORIGEN, DESTINO);
+
+const cambios = git(['status', '--porcelain', '--', '.'], DESTINO).trim();
+if (!cambios) {
+  console.log('No hay nada nuevo para publicar.');
+} else {
+  console.log(`Copiado a ${DESTINO}:\n${cambios}\n`);
+  console.log('Falta: commit en una rama de FidelWorkSpace y PR a main.');
 }

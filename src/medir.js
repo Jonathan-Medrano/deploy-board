@@ -10,6 +10,8 @@ import { unificarPersonas } from './identidades.js';
 import { medirStageToDev, sumarDelSprint } from './stageToDev.js';
 import { ordenarParaEjecucion } from './reconciliador/index.js';
 import { marcarEnMain } from './enMain.js';
+import { estadoDelDeploy } from './deploy.js';
+import { analizarPr } from './analisisPr.js';
 
 export const OPCIONES_POR_DEFECTO = { ambientes: ['dev', 'stage'], destino: 'stage' };
 
@@ -39,7 +41,11 @@ export async function medirTodo(opciones = {}, deps = {}) {
   const env = deps.env || process.env;
   const ado = deps.ado || crearClienteAdo(env);
   const avisos = [];
+  // Solo para que el que mira la consola sepa en que etapa va: la medicion tarda y sin esto
+  // parece colgada. No cambia nada de lo que se mide.
+  const paso = deps.paso || (() => {});
 
+  paso('Leyendo los work items y adjuntos del sprint en Azure DevOps');
   const { scripts: adjuntos, wis, tasks, respaldos } = await descubrirAdjuntos(ado, o.iteracion);
 
   // No se ocultan en silencio: si el equipo dejo respaldos __OLD/__NEW adjuntos, el aviso dice
@@ -66,6 +72,7 @@ export async function medirTodo(opciones = {}, deps = {}) {
     avisos.push('No se comparo contra el repo: no hay carpeta del sprint elegida (ni en pantalla ni en DEPLOY_BOARD_SPRINT). Los desvios de script faltante o sobrante NO se pueden detectar.');
   } else {
     try {
+      paso(`Leyendo la carpeta ${o.sprint} del repo`);
       repo = await descubrir(ado, { sprint: o.sprint, ...delRepo });
       if (!repo.length) {
         avisos.push(`No encontre scripts en ${delRepo.repo}, rama ${delRepo.rama}, carpeta del sprint "${o.sprint}". Revisa DEPLOY_BOARD_SPRINT y DEPLOY_BOARD_RAMA_SCRIPTS: los desvios de script faltante o sobrante NO se pueden detectar sin eso.`);
@@ -81,6 +88,7 @@ export async function medirTodo(opciones = {}, deps = {}) {
     // contenido que va a subir no es el que ya esta ahi). Que falle no puede tumbar el resto
     // de la medicion — es un dato mas, no el motivo por el que se mide.
     try {
+      paso(`Leyendo la rama ${delRepo.ramaMain}`);
       archivosDeMain = await descubrir(ado, { sprint: o.sprint, repo: delRepo.repo, rama: delRepo.ramaMain });
       ramaMainUsada = delRepo.ramaMain;
     } catch (e) {
@@ -121,6 +129,7 @@ export async function medirTodo(opciones = {}, deps = {}) {
   const medir = deps.medirAmbiente || medirAmbiente;
   const estados = {};
   for (const amb of o.ambientes) {
+    paso(`Consultando la base de ${amb} (${scripts.length} scripts)`);
     const medido = await medir(scripts, amb, { env });
     for (const [id, v] of Object.entries(medido)) (estados[id] ||= {})[amb] = v;
   }
@@ -131,6 +140,9 @@ export async function medirTodo(opciones = {}, deps = {}) {
     roles,
     enMain, ramaMain: ramaMainUsada,
   });
+  reporte.deploy = estadoDelDeploy(wis);
+  // Donde se commitea un script del sprint: el link de "Commitear el script al repo".
+  reporte.repoScripts = o.sprint ? { repo: delRepo.repo, rama: delRepo.rama, carpeta: `${CARPETA_POR_DEFECTO}/${o.sprint}` } : null;
 
   // El pase stage -> dev va aparte del sprint: compara las ramas, no una carpeta. Que falle no
   // puede tumbar la medicion del sprint, pero tampoco pasar callado — una pestaña vacia se lee
@@ -139,12 +151,30 @@ export async function medirTodo(opciones = {}, deps = {}) {
   if (ado.diffEntreRamas) {
     const ramaStage = env.DEPLOY_BOARD_RAMA_STAGE || undefined;
     try {
+      paso('Comparando la rama de stage contra la de dev');
       const s2d = await medirStageToDev(ado, { repo: delRepo.repo, ramaStage, ramaDev: delRepo.rama }, { medirAmbiente: medir, env });
       const todo = sumarDelSprint(s2d, scripts, estados);
       reporte.stageToDev = { ramaStage: todo.ramaStage, ramaDev: todo.ramaDev, orden: ordenarParaEjecucion(todo.scripts), estados: todo.estados, origen: todo.origen };
     } catch (e) {
       const causa = e.cause && (e.cause.code || e.cause.message);
       avisos.push(`No pude comparar la rama de stage contra ${delRepo.rama} (${e.message}${causa ? ': ' + causa : ''}): la pestaña stage → dev no se evaluó.`);
+    }
+  }
+
+  // El PR stage -> main contra lo que se acaba de medir: misma corrida, misma foto. Que falle
+  // (link mal pegado, PR inexistente) no puede tirar la medicion, que es la que se guarda.
+  reporte.analisisPr = null;
+  if (o.prUrl) {
+    try {
+      paso('Comparando el PR contra lo medido');
+      reporte.analisisPr = await analizarPr(ado, {
+        prUrl: o.prUrl, repo: delRepo.repo, ramaStage: env.DEPLOY_BOARD_RAMA_STAGE || undefined, ramaMain: delRepo.ramaMain,
+        sprint: o.sprint || null, scripts, wis, enMain,
+      });
+      avisos.push(...reporte.analisisPr.avisos);
+    } catch (e) {
+      reporte.analisisPr = { error: e.message, hallazgos: [] };
+      avisos.push(`No pude analizar el PR (${e.message}): la medición del sprint se guardó igual.`);
     }
   }
 

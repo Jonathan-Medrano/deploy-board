@@ -285,3 +285,26 @@ test('stage -> dev suma los scripts del sprint que corrieron en stage y faltan e
   assert.equal(reporte.stageToDev.orden[0].wiId, 25038);
   assert.equal(Object.values(reporte.stageToDev.origen)[0], 'sprint');
 });
+
+test('sin link de PR no se analiza ningun PR', async () => {
+  const { reporte } = await medirTodo({ ambientes: [] }, deps());
+  assert.equal(reporte.analisisPr, null);
+});
+
+test('si el analisis del PR falla, la medicion sale igual y el fallo se avisa', async () => {
+  const { reporte, avisos } = await medirTodo({ ambientes: [], prUrl: 'no es un link' }, deps());
+  assert.ok(reporte.orden, 'la medicion tiene que existir igual');
+  assert.match(reporte.analisisPr.error, /link/);
+  assert.ok(avisos.some((a) => /PR/.test(a) && /se guardó igual/.test(a)), JSON.stringify(avisos));
+});
+
+test('con link de PR la medicion trae el analisis contra lo que acaba de medir', async () => {
+  const ado = {
+    ...adoBase(),
+    obtenerPr: async (repo, id) => ({ id, origen: 'master', destino: 'main', commitOrigen: 'a', commitDestino: 'b' }),
+    diffEntreCommits: async () => [],
+  };
+  const { reporte } = await medirTodo({ ambientes: [], sprint: 'S', prUrl: '25801' }, deps({ ado, descubrirRepo: async () => [] }));
+  assert.equal(reporte.analisisPr.pr.id, 25801);
+  assert.deepEqual(reporte.analisisPr.hallazgos, []);
+});

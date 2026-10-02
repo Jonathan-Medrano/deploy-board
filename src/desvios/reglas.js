@@ -82,6 +82,9 @@ export function detectarDesvios({
     out.push({
       codigo, severidad, titulo, detalle,
       responsable: responsableDe(codigo, sc, wi, ambiente),
+      // El work item donde esta ADJUNTO el script: renombrarlo o bajarlo se hace ahi, y suele
+      // ser la tarjeta Scripts, no la US que el nombre dice.
+      ...(sc && sc.contenedorId != null ? { contenedorId: sc.contenedorId } : {}),
       ...resto,
     });
   };
@@ -170,11 +173,16 @@ export function detectarDesvios({
       // "Mas reciente" es un dato REAL solo si el adjunto medido trae `creado`: sin fecha no
       // hay con que comparar y afirmar que es la mas nueva seria inventar un orden que nunca
       // se midio.
-      const medida = f.includes('adjunto')
-        ? (s.creado ? 'la del adjunto mas reciente' : 'la del adjunto')
-        : 'la del repo';
+      const medida = s.medidoDe === 'repo'
+        ? 'la del repo (la del adjunto no deja una sonda que se pueda derivar)'
+        : f.includes('adjunto')
+          ? (s.creado ? 'la del adjunto mas reciente' : 'la del adjunto')
+          : 'la del repo';
+      const unidos = s.unidoPorWorkItem
+        ? ` Se unio con ${s.unidoPorWorkItem.archivoRepo} del repo por ser el unico script sin pareja de cada lado del WI ${s.wiId}: si no son el mismo, renombra el del repo con la convencion y se separan.`
+        : '';
       add('D12', 'alto', 'El mismo script tiene contenido distinto en dos lugares',
-        `${s.archivo} — versiones en: ${donde}. Se midio ${medida}.`,
+        `${s.archivo} — versiones en: ${donde}. Se midio ${medida}.${unidos}`,
         { scriptId: s.id, wiId: s.wiId });
     }
 
@@ -242,10 +250,27 @@ export function detectarDesvios({
 
     // D8 no se evalua para un WI de fuera del sprint: solo se ven los scripts suyos que cayeron en
     // este sprint, y proponer ese conteo como CantidadScripts escribiria un valor falso.
-    if (!wi.fueraDelSprint && wi.cantidadScripts != null && Number(wi.cantidadScripts) !== suyos.length) {
-      add('D8', 'medio', `CantidadScripts dice ${wi.cantidadScripts} y hay ${suyos.length}`,
-        `WI ${wi.id} — ${wi.titulo}`,
-        { wiId: wi.id, accion: { tipo: 'setCampos', id: wi.id, valor: { 'Custom.CantidadScripts': suyos.length } } });
+    // Un X__NEW.sql que quedo solo es la copia de referencia de un SP, no un script que se sube:
+    // no cuenta (regla medida contra el historial: US-24768 tenia solo __OLD/__NEW y el campo
+    // vacio, y estaba bien). El campo VACIO con scripts es el olvido mas comun: el campo es
+    // opcional y no tiene default, asi que nadie lo ve en rojo en Azure.
+    // Se cuenta CONTENIDO, no adjuntos: el mismo script subido a dos work items con y sin PRE
+    // (medido en US-25155: "01 - ..." en la US y "PRE - 01 - ..." en la task 25176, mismo hash)
+    // contaba 7 donde la US declaraba 4, y los 4 eran correctos.
+    const validos = suyos.filter((s) => !s.esNew);
+    const cuentan = new Set(validos.map((s) => s.hash || s.id)).size;
+    const repetidos = validos.length - cuentan;
+    const declarado = wi.cantidadScripts;
+    const vacio = declarado == null || declarado === '';
+    const detalleD8 = `WI ${wi.id} — ${wi.titulo}: la US dice ${vacio ? 'nada (campo vacio)' : declarado} y hay ${cuentan} ` +
+      `${cuentan === 1 ? 'script' : 'scripts distintos'}` +
+      (repetidos ? ` (${validos.length} adjuntos, ${repetidos} con el mismo contenido que otro)` : '') + '.';
+    if (!wi.fueraDelSprint && vacio && cuentan > 0) {
+      add('D8', 'medio', `CantidadScripts esta vacio y hay ${cuentan}`, detalleD8,
+        { wiId: wi.id, declarado: null, cuentan, accion: { tipo: 'setCampos', id: wi.id, valor: { 'Custom.CantidadScripts': cuentan } } });
+    } else if (!wi.fueraDelSprint && !vacio && Number(declarado) !== cuentan) {
+      add('D8', 'medio', `CantidadScripts dice ${declarado} y hay ${cuentan}`, detalleD8,
+        { wiId: wi.id, declarado: Number(declarado), cuentan, accion: { tipo: 'setCampos', id: wi.id, valor: { 'Custom.CantidadScripts': cuentan } } });
     }
 
     const tieneModulo = suyos.some((s) => (s.objetos || []).some((o) => MODULOS.has(o.tipo)));

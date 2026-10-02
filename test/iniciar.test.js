@@ -27,9 +27,10 @@ test('el reinicio por codigo 10 vuelve a copiar arrancar.bat, asi toma la versio
   assert.match(ini, /if errorlevel 10 if not errorlevel 11 \(set "MODO=reinicio" & goto otra\)/i);
 });
 
-test('arrancar.bat trae el pull y el servidor, y saltea el pull en un reinicio', () => {
+test('arrancar.bat actualiza la carpeta y levanta el servidor, y saltea la actualizacion en un reinicio', () => {
   const arr = leer('scripts/arrancar.bat');
-  assert.match(arr, /git pull --ff-only/);
+  assert.match(arr, /node src\/actualizar-cli\.js/);
+  assert.doesNotMatch(arr, /git\s+pull/i);
   assert.match(arr, /node src\/servidor-cli\.js/);
   assert.match(arr, /"%~2"=="reinicio"/i);
 });

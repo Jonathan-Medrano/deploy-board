@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   construirReporte, formatearReporte, agruparRevisarAMano,
-  semaforoDe, accionDe, agruparPorResponsable, lineasDeMotivos,
+  semaforoDe, accionDe, agruparPorResponsable, lineasDeMotivos, dondeSeArregla,
 } from '../src/reporte.js';
 
 const divergente = {
@@ -216,4 +216,34 @@ test('accionDe(D13) dice que revisar y en que ambiente corrio', () => {
   assert.match(a, /^Revisar/);
   assert.match(a, /pausado/);
   assert.match(a, /dev, stage/);
+});
+
+test('un pendiente que junta D2/D3/D4 del mismo script lleva las firmas de todos: aceptarlo acepta los tres', async () => {
+  const { agruparPorResponsable } = await import('../src/reporte.js');
+  const g = agruparPorResponsable([
+    { codigo: 'D2', severidad: 'alto', scriptId: 's', detalle: 'a', responsable: 'Ana', firma: 'f2' },
+    { codigo: 'D4', severidad: 'bloqueante', scriptId: 's', detalle: 'b', responsable: 'Ana', firma: 'f4' },
+  ]);
+  assert.deepEqual(g[0].pendientes[0].firmas, ['f2', 'f4']);
+});
+
+test('cada pendiente dice donde se hace el cambio, no solo que aceptar', () => {
+  assert.deepEqual(dondeSeArregla({ codigo: 'D1', wiId: 1, taskId: 900 }), { wi: 900, que: 'task' });
+  assert.deepEqual(dondeSeArregla({ codigo: 'D6', wiId: 1, contenedorId: 5 }), { repo: true });
+  assert.deepEqual(dondeSeArregla({ codigo: 'D7', wiId: 1, contenedorId: 5 }), { wi: 5, que: 'wi' }, 'se renombra donde esta adjunto');
+  assert.deepEqual(dondeSeArregla({ codigo: 'D2', wiId: 1, contenedorId: 5 }), { wi: 5, que: 'wi' }, 'el script se baja de donde esta adjunto');
+  assert.deepEqual(dondeSeArregla({ codigo: 'D12', wiId: 1 }), { wi: 1, que: 'wi' }, 'sin contenedor cae al work item');
+  assert.deepEqual(dondeSeArregla({ codigo: 'D8', wiId: 1, contenedorId: 5 }), { wi: 1, que: 'wi' }, 'CantidadScripts se corrige en la US');
+  assert.equal(dondeSeArregla({ codigo: 'D1', wiId: 1 }), null);
+  assert.equal(dondeSeArregla({ codigo: 'D7' }), null);
+});
+
+test('el agrupado por persona lleva el donde de cada pendiente', () => {
+  const g = agruparPorResponsable([{ codigo: 'D1', severidad: 'bloqueante', responsable: 'Ana', detalle: 'x', wiId: 1, taskId: 900 }]);
+  assert.deepEqual(g[0].pendientes[0].donde, { wi: 900, que: 'task' });
+});
+
+test('la accion de D8 dice cuanto declara la US y cuantos son', () => {
+  assert.equal(accionDe({ codigo: 'D8', declarado: 4, cuentan: 3 }), 'Corregir CantidadScripts en la US: dice 4, son 3');
+  assert.equal(accionDe({ codigo: 'D8', declarado: null, cuentan: 1 }), 'Corregir CantidadScripts en la US: dice vacio, son 1');
 });

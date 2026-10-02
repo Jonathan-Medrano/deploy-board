@@ -37,7 +37,8 @@ export async function descubrirRepoEnAdo(ado, { sprint, repo = REPO_POR_DEFECTO,
 // Un .sql del repo, bajado de UNA rama puntual, listo para reconciliar y sondear. Lo usan el
 // lado repo del sprint (rama dev) y el pase stage -> dev (rama de stage): la misma lectura en
 // dos lugares se desincroniza en el primer arreglo.
-export async function leerScriptDelRepo(ado, { repo = REPO_POR_DEFECTO, rama = RAMA_POR_DEFECTO, ruta, carpetaWi }, deps = {}) {
+// `tipoVersion` 'commit' cuando `rama` es en realidad un commit (el analisis de un PR).
+export async function leerScriptDelRepo(ado, { repo = REPO_POR_DEFECTO, rama = RAMA_POR_DEFECTO, ruta, carpetaWi, tipoVersion }, deps = {}) {
   const decodificar = deps.decodificarSql || decodificarSql;
   const nombre = ruta.split('/').pop();
   const numCarpeta = /(\d+)/.exec(carpetaWi || '');
@@ -45,10 +46,10 @@ export async function leerScriptDelRepo(ado, { repo = REPO_POR_DEFECTO, rama = R
   // mayusculas contra los modulos que define el adjunto.
   const deNew = esVersionNueva(nombre) ? { esNew: true, nombreSp: nombre.replace(/__NEW\.sql$/i, '') } : {};
   try {
-    const buf = await ado.descargarArchivo(repo, ruta, rama);
+    const buf = tipoVersion ? await ado.descargarArchivo(repo, ruta, rama, tipoVersion) : await ado.descargarArchivo(repo, ruta, rama);
     return armarScriptParcial(nombre, decodificar(buf), 'repo', {
       carpeta: carpetaWi,
-      responsables: { commiteoEnElRepo: await ado.ultimoCommitDe(repo, ruta, rama) },
+      responsables: { commiteoEnElRepo: tipoVersion ? await ado.ultimoCommitDe(repo, ruta, rama, tipoVersion) : await ado.ultimoCommitDe(repo, ruta, rama) },
       wiIdFallback: numCarpeta ? Number(numCarpeta[1]) : null,
       ...deNew,
     });

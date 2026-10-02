@@ -62,3 +62,22 @@ test('nombre fuera de convencion no inventa un id', () => {
   assert.equal(r.wiId, null);
   assert.equal(r.accion, null);
 });
+
+test('un script de otra base lleva la base adelante y el resto se parsea con la convencion', () => {
+  const r = parsearNombre('[fidel_ml_db] - [U-25155] - Fila inicial LastSearchDate en Setting - INSERT.sql');
+  assert.equal(r.base, 'fidel_ml_db');
+  assert.equal(r.wiId, 25155);
+  assert.equal(r.accion, 'INSERT');
+  assert.equal(r.descripcion, 'Fila inicial LastSearchDate en Setting');
+});
+
+test('sin prefijo, o con [fidel_db], la base queda en null: es la de siempre', () => {
+  assert.equal(parsearNombre('[U-25155] - 01 - Columna ListingTypeMELI en Producto - ALTER.sql').base, null);
+  assert.equal(parsearNombre('[fidel_db] - [U-25155] - Algo - ALTER.sql').base, null);
+  assert.equal(parsearNombre('[fidel_db] - [U-25155] - Algo - ALTER.sql').wiId, 25155);
+});
+
+test('un corchete que no es una base no se toma como base', () => {
+  const r = parsearNombre('[XXXXX] - Algo - ALTER.sql');
+  assert.equal(r.base, null);
+});

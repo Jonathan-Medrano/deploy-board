@@ -1,15 +1,9 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { cargarEnv } from './entorno.js';
+import { archivosEnv, cargarEnv, puertoDelEntorno } from './entorno.js';
 import { crearServidor, RAIZ } from './servidor.js';
 
-// El .env de al lado primero, y despues el del task runner si esta: en la maquina de un dev
-// que ya tiene el task runner andando, no hace falta copiar el PAT dos veces.
-cargarEnv([path.join(RAIZ, '.env'), path.join(RAIZ, '..', 'taskrunner', '.env')]);
+cargarEnv(archivosEnv(RAIZ));
 
-// Puerto propio y fijo: el task runner esta en 4600 y los dev servers por worktree arrancan en
-// los 3000/4300. 4700 no pisa a nadie. Se puede mover con DEPLOY_BOARD_PORT.
-const PUERTO = Number(process.env.DEPLOY_BOARD_PORT || 4700);
+const PUERTO = puertoDelEntorno();
 
 function opcionesDelEntorno(env = process.env) {
   return {
@@ -20,7 +14,7 @@ function opcionesDelEntorno(env = process.env) {
   };
 }
 
-const servidor = crearServidor({ opciones: opcionesDelEntorno() });
+const servidor = crearServidor({ opciones: opcionesDelEntorno(), puerto: PUERTO });
 
 servidor.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {

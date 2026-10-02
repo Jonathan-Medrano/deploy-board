@@ -8,17 +8,10 @@ test('sin PAT no arranca, y el mensaje no filtra nada', () => {
   assert.throws(() => crearClienteAdo({ ...env, AZURE_PAT: '' }), /AZURE_PAT/);
 });
 
-test('setCampos rechaza System.State: el estado de la madre lo mueve una persona', async () => {
+test('el cliente solo lee: no expone nada que escriba en un work item', () => {
   const c = crearClienteAdo(env, { fetch: async () => { throw new Error('no deberia llamar'); } });
-  await assert.rejects(() => c.setCampos(1, { 'System.State': 'Tested' }), /System\.State/);
-});
-
-test('el rechazo de System.State no se esquiva escribiendolo distinto', async () => {
-  const c = crearClienteAdo(env, { fetch: async () => { throw new Error('no deberia llamar'); } });
-  for (const clave of ['system.state', 'SYSTEM.STATE', 'System.state']) {
-    await assert.rejects(() => c.setCampos(1, { [clave]: 'Tested' }), /System\.State/,
-      `${clave} esquivo el guard`);
-  }
+  const escrituras = Object.keys(c).filter((k) => /^(set|update|patch|crear|borrar|actualizar)/i.test(k));
+  assert.deepEqual(escrituras, [], 'el PAT del .env.example es de LECTURA');
 });
 
 test('getWorkItems parte en lotes de 200', async () => {
@@ -100,9 +93,61 @@ test('si la red falla dos veces seguidas, el error sale', async () => {
   await assert.rejects(() => c.listarEstados('User Story'), /fetch failed/);
 });
 
-test('una escritura NO se reintenta: podria aplicarse dos veces', async () => {
-  let llamadas = 0;
-  const c = crearClienteAdo(env, { fetch: async () => { llamadas++; throw new TypeError('fetch failed'); } });
-  await assert.rejects(() => c.setEstado(1, 'Active'), /fetch failed/);
-  assert.equal(llamadas, 1);
+function fetchQueResponde(cuerpo) {
+  const urls = [];
+  const fake = async (u) => { urls.push(u); return { ok: true, status: 200, json: async () => cuerpo }; };
+  return { urls, fake };
+}
+
+test('listarRepos trae nombre y si esta deshabilitado', async () => {
+  const { fake } = fetchQueResponde({ value: [{ id: 'a', name: 'Api.Net' }, { id: 'b', name: 'Viejo', isDisabled: true }] });
+  const c = crearClienteAdo(env, { fetch: fake });
+  assert.deepEqual(await c.listarRepos(), [
+    { id: 'a', nombre: 'Api.Net', deshabilitado: false },
+    { id: 'b', nombre: 'Viejo', deshabilitado: true },
+  ]);
+});
+
+test('listarRamas devuelve los nombres sin refs/heads/ y escapa el repo', async () => {
+  const { urls, fake } = fetchQueResponde({ value: [{ name: 'refs/heads/dev' }, { name: 'refs/heads/feature/x' }] });
+  const c = crearClienteAdo(env, { fetch: fake });
+  assert.deepEqual(await c.listarRamas('Repo Raro'), ['dev', 'feature/x']);
+  assert.match(urls[0], /repositories\/Repo%20Raro\/refs\?filter=heads\//);
+});
+
+test('contarPendientes lee aheadCount del diff destino -> origen', async () => {
+  const { urls, fake } = fetchQueResponde({ aheadCount: 7, behindCount: 2, changes: [] });
+  const c = crearClienteAdo(env, { fetch: fake });
+  assert.equal(await c.contarPendientes('Api.Net', 'dev', 'master'), 7);
+  assert.match(urls[0], /baseVersion=master&baseVersionType=branch&targetVersion=dev&targetVersionType=branch/);
+});
+
+test('sin aheadCount no se inventa un cero: es un error', async () => {
+  const { fake } = fetchQueResponde({ changes: [] });
+  const c = crearClienteAdo(env, { fetch: fake });
+  await assert.rejects(() => c.contarPendientes('Api.Net', 'dev', 'master'), /aheadCount/);
+});
+
+test('commitsPendientes devuelve hash corto, primera linea, autor y fecha', async () => {
+  const { urls, fake } = fetchQueResponde({ value: [{
+    commitId: '0123456789abcdef', comment: 'fix: algo\n\ncuerpo largo', author: { name: 'Ana', date: '2026-10-01T10:00:00Z' },
+  }] });
+  const c = crearClienteAdo(env, { fetch: fake });
+  assert.deepEqual(await c.commitsPendientes('Api.Net', 'dev', 'master'), [
+    { id: '01234567', mensaje: 'fix: algo', autor: 'Ana', fecha: '2026-10-01' },
+  ]);
+  // Azure devuelve lo que compareVersion tiene y itemVersion no (medido 2026-10-02 en Fidel.MercadoLibre.Api).
+  assert.match(urls[0], /itemVersion\.version=master&searchCriteria\.compareVersion\.version=dev&searchCriteria\.\$top=50/);
+});
+
+test('prsActivos filtra por origen, destino y estado activo', async () => {
+  const { urls, fake } = fetchQueResponde({ value: [{ pullRequestId: 25739, title: 'StageToDev' }] });
+  const c = crearClienteAdo(env, { fetch: fake });
+  assert.deepEqual(await c.prsActivos('FidelFrontWeb', 'stage', 'develop'), [{ id: 25739, titulo: 'StageToDev' }]);
+  assert.match(urls[0], /sourceRefName=refs%2Fheads%2Fstage&searchCriteria\.targetRefName=refs%2Fheads%2Fdevelop&searchCriteria\.status=active/);
+});
+
+test('urlDePr arma el link sin llamar a la red', () => {
+  const c = crearClienteAdo(env, { fetch: async () => { throw new Error('no deberia llamar'); } });
+  assert.equal(c.urlDePr('Api.Net', 7), 'https://dev.azure.com/agenciap/Fidel/_git/Api.Net/pullrequest/7');
 });

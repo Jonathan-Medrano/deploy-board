@@ -16,15 +16,14 @@ export function crearClienteAdo(env = process.env, deps = {}) {
   // El mensaje de error nunca incluye el cuerpo del request ni la cabecera: ahi viaja el PAT.
   // sqlcmd es sincronico y bloquea el proceso decenas de segundos mientras mide las bases; en ese
   // rato Azure cierra la conexion que node tenia abierta, y el primer pedido de despues salia con
-  // "fetch failed" sin haber llegado a Azure. Una lectura se reintenta una vez; una escritura
-  // (PATCH) no, porque podria haberse aplicado y repetirla la aplicaria dos veces.
+  // "fetch failed" sin haber llegado a Azure. Se reintenta una vez: el cliente solo LEE (la
+  // WIQL viaja por POST pero es una consulta), asi que repetir un pedido no cambia nada en Azure.
   async function api(url, opts = {}) {
     const pedido = { ...opts, headers: { Authorization: auth, 'Content-Type': 'application/json', ...(opts.headers || {}) } };
     let res;
     try {
       res = await http(url, pedido);
-    } catch (e) {
-      if (String(opts.method || 'GET').toUpperCase() === 'PATCH') throw e;
+    } catch {
       res = await http(url, pedido);
     }
     if (!res.ok) throw new Error(`Azure ${res.status} ${res.statusText} en ${url.split('?')[0]}`);
@@ -50,27 +49,6 @@ export function crearClienteAdo(env = process.env, deps = {}) {
   async function descargarAdjunto(url) {
     const res = await api(url.includes('?') ? url : `${url}?${API}`);
     return Buffer.from(await res.arrayBuffer());
-  }
-
-  async function setEstado(id, estado) {
-    const url = `${org}/_apis/wit/workitems/${id}?${API}`;
-    const body = [{ op: 'add', path: '/fields/System.State', value: estado }];
-    return (await api(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json-patch+json' }, body: JSON.stringify(body) })).json();
-  }
-
-  async function setCampos(id, campos) {
-    const entradas = Object.entries(campos || {}).filter(([, v]) => v != null && v !== '');
-    // La comparacion va en minusculas porque ADO resuelve los reference names sin distinguir
-    // mayusculas: un guard con `k === 'System.State'` lo esquiva cualquiera que escriba
-    // `system.state`, y esta es la UNICA frontera que impide que la automatizacion mueva el
-    // estado de una tarjeta. Un guard que se saltea escribiendo distinto no es un guard.
-    if (entradas.some(([k]) => String(k).toLowerCase() === 'system.state')) {
-      throw new Error('setCampos no toca System.State: para eso esta setEstado, y solo sobre la task contenedora.');
-    }
-    if (!entradas.length) return null;
-    const url = `${org}/_apis/wit/workitems/${id}?${API}`;
-    const body = entradas.map(([path, value]) => ({ op: 'add', path: `/fields/${path}`, value }));
-    return (await api(url, { method: 'PATCH', headers: { 'Content-Type': 'application/json-patch+json' }, body: JSON.stringify(body) })).json();
   }
 
   // La identidad de quien subio un adjunto NO esta en los atributos de la relacion
@@ -107,19 +85,23 @@ export function crearClienteAdo(env = process.env, deps = {}) {
     return (((await (await api(url)).json()).value) || []).map((i) => ({ ruta: i.path, esCarpeta: !!i.isFolder }));
   }
 
-  async function descargarArchivo(repo, ruta, rama) {
+  // `tipo` 'commit' lee el archivo en un commit puntual (el analisis de un PR lee lo que el PR
+  // trae, no lo que la rama tenga hoy). Sin tipo es una rama, como siempre.
+  const tipoDeVersion = (param, tipo) => (tipo && tipo !== 'branch' ? `&${param}=${encodeURIComponent(tipo)}` : '');
+
+  async function descargarArchivo(repo, ruta, rama, tipo) {
     const url = `${git(repo)}/items?path=${encodeURIComponent(ruta)}` +
-      `&versionDescriptor.version=${encodeURIComponent(rama)}&$format=octetStream&${API}`;
+      `&versionDescriptor.version=${encodeURIComponent(rama)}${tipoDeVersion('versionDescriptor.versionType', tipo)}&$format=octetStream&${API}`;
     return Buffer.from(await (await api(url)).arrayBuffer());
   }
 
   // Quien commiteo el archivo. Es el responsable a nombrar cuando el script esta en el repo
   // y no esta adjunto en la tarjeta: es el que tiene que subirlo. Un fallo no es un error del
   // barrido — devuelve null y el desvio sale sin nombre, nunca con uno inventado.
-  async function ultimoCommitDe(repo, ruta, rama) {
+  async function ultimoCommitDe(repo, ruta, rama, tipo) {
     try {
       const url = `${git(repo)}/commits?searchCriteria.itemPath=${encodeURIComponent(ruta)}` +
-        (rama ? `&searchCriteria.itemVersion.version=${encodeURIComponent(rama)}` : '') +
+        (rama ? `&searchCriteria.itemVersion.version=${encodeURIComponent(rama)}${tipoDeVersion('searchCriteria.itemVersion.versionType', tipo)}` : '') +
         `&searchCriteria.$top=1&${API}`;
       const c = (((await (await api(url)).json()).value) || [])[0];
       if (!c || !c.author) return null;
@@ -132,17 +114,45 @@ export function crearClienteAdo(env = process.env, deps = {}) {
   // Lo que la rama `target` tiene y `base` no: la diferencia contra el ancestro comun, que es
   // exactamente lo que un merge de target en base va a traer. Carpetas incluidas; filtra quien llama.
   async function diffEntreRamas(repo, base, target) {
+    return diff(repo, base, target, 'branch');
+  }
+
+  // Lo mismo entre dos commits: los de un PR (lastMergeTargetCommit -> lastMergeSourceCommit).
+  // Por commit y no por rama: un PR ya completado tiene las ramas mergeadas y su diff por rama
+  // daria vacio.
+  async function diffEntreCommits(repo, base, target) {
+    return diff(repo, base, target, 'commit');
+  }
+
+  async function diff(repo, base, target, tipo) {
     const out = [];
     const top = 2000;
     for (let skip = 0; ; skip += top) {
-      const url = `${git(repo)}/diffs/commits?baseVersion=${encodeURIComponent(base)}&baseVersionType=branch` +
-        `&targetVersion=${encodeURIComponent(target)}&targetVersionType=branch&$top=${top}&$skip=${skip}&${API}`;
+      const url = `${git(repo)}/diffs/commits?baseVersion=${encodeURIComponent(base)}&baseVersionType=${tipo}` +
+        `&targetVersion=${encodeURIComponent(target)}&targetVersionType=${tipo}&$top=${top}&$skip=${skip}&${API}`;
       const r = await (await api(url)).json();
       const cambios = r.changes || [];
       out.push(...cambios);
       if (r.allChangesIncluded !== false || !cambios.length) break;
     }
     return out;
+  }
+
+  // Un PR de Git: de que rama a cual va y los dos commits con que ADO arma el merge.
+  async function obtenerPr(repo, id) {
+    const url = `${git(repo)}/pullrequests/${encodeURIComponent(id)}?${API}`;
+    const pr = await (await api(url)).json();
+    const rama = (ref) => String(ref || '').replace(/^refs\/heads\//, '');
+    return {
+      id: pr.pullRequestId ?? Number(id),
+      titulo: pr.title || null,
+      estado: pr.status || null,
+      repo: (pr.repository && pr.repository.name) || repo,
+      origen: rama(pr.sourceRefName),
+      destino: rama(pr.targetRefName),
+      commitOrigen: (pr.lastMergeSourceCommit && pr.lastMergeSourceCommit.commitId) || null,
+      commitDestino: (pr.lastMergeTargetCommit && pr.lastMergeTargetCommit.commitId) || null,
+    };
   }
 
   // Todas las firmas (nombre + mail) que dejaron commits en la carpeta. No es para nombrar a
@@ -178,8 +188,56 @@ export function crearClienteAdo(env = process.env, deps = {}) {
     return (((await (await api(url)).json()).value) || []).map((s) => s.name);
   }
 
+  // --- Pestaña Repos: el estado de los pases de rama en todos los repos del proyecto ---
+  const proyectoUrl = `${String(org).replace(/\/+$/, '')}/${encodeURIComponent(project)}`;
+
+  async function listarRepos() {
+    const url = `${proyectoUrl}/_apis/git/repositories?${API}`;
+    return (((await (await api(url)).json()).value) || [])
+      .map((r) => ({ id: r.id, nombre: r.name, deshabilitado: !!r.isDisabled }));
+  }
+
+  async function listarRamas(repo) {
+    const url = `${git(repo)}/refs?filter=heads/&${API}`;
+    return (((await (await api(url)).json()).value) || []).map((r) => String(r.name).replace(/^refs\/heads\//, ''));
+  }
+
+  // Commits del origen que el destino no tiene: aheadCount del diff destino -> origen. Si Azure
+  // no lo trae, se dice: un cero inventado se lee como "no hay nada que promocionar".
+  async function contarPendientes(repo, origen, destino) {
+    const url = `${git(repo)}/diffs/commits?baseVersion=${encodeURIComponent(destino)}&baseVersionType=branch` +
+      `&targetVersion=${encodeURIComponent(origen)}&targetVersionType=branch&$top=1&${API}`;
+    const r = await (await api(url)).json();
+    if (typeof r.aheadCount !== 'number') throw new Error(`Azure no devolvió aheadCount para ${origen} → ${destino} en ${repo}`);
+    return r.aheadCount;
+  }
+
+  // Azure devuelve los commits que compareVersion tiene y itemVersion no: el origen va en
+  // compareVersion. Al reves (medido 2026-10-02) devolvia los commits propios del DESTINO.
+  async function commitsPendientes(repo, origen, destino, top = 50) {
+    const url = `${git(repo)}/commits?searchCriteria.itemVersion.version=${encodeURIComponent(destino)}` +
+      `&searchCriteria.compareVersion.version=${encodeURIComponent(origen)}&searchCriteria.$top=${top}&${API}`;
+    return (((await (await api(url)).json()).value) || []).map((c) => ({
+      id: String(c.commitId || '').slice(0, 8),
+      mensaje: String(c.comment || '').split('\n')[0],
+      autor: (c.author && c.author.name) || null,
+      fecha: ((c.author && c.author.date) || '').slice(0, 10) || null,
+    }));
+  }
+
+  async function prsActivos(repo, origen, destino) {
+    const url = `${git(repo)}/pullrequests?searchCriteria.sourceRefName=${encodeURIComponent(`refs/heads/${origen}`)}` +
+      `&searchCriteria.targetRefName=${encodeURIComponent(`refs/heads/${destino}`)}&searchCriteria.status=active&${API}`;
+    return (((await (await api(url)).json()).value) || []).map((p) => ({ id: p.pullRequestId, titulo: p.title || null }));
+  }
+
+  function urlDePr(repo, id) {
+    return `${proyectoUrl}/_git/${encodeURIComponent(repo)}/pullrequest/${id}`;
+  }
+
   return {
-    wiql, getWorkItems, descargarAdjunto, quienSubioCadaAdjunto, setEstado, setCampos, listarEstados,
-    listarArchivos, descargarArchivo, ultimoCommitDe, autoresDe, diffEntreRamas, listarIteraciones,
+    wiql, getWorkItems, descargarAdjunto, quienSubioCadaAdjunto, listarEstados,
+    listarArchivos, descargarArchivo, ultimoCommitDe, autoresDe, diffEntreRamas, diffEntreCommits, obtenerPr, listarIteraciones,
+    listarRepos, listarRamas, contarPendientes, commitsPendientes, prsActivos, urlDePr,
   };
 }

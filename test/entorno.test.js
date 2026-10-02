@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parsearEnv, aplicarEnv } from '../src/entorno.js';
+import { parsearEnv, aplicarEnv, archivosEnv, puertoDelEntorno } from '../src/entorno.js';
 
 test('lee clave=valor', () => {
   assert.deepEqual(parsearEnv('A=1\nB=dos'), { A: '1', B: 'dos' });
@@ -41,4 +41,18 @@ test('una variable vacia en el entorno NO cuenta como puesta', () => {
   const env = { A: '' };
   aplicarEnv(env, { A: 'del archivo' });
   assert.equal(env.A, 'del archivo');
+});
+
+test('el .env del task runner se carga solo si la carpeta hermana ES el task runner', () => {
+  const conPaquete = (nombre) => ({ leer: (r) => { if (r.endsWith('package.json')) return JSON.stringify({ name: nombre }); throw new Error('no'); } });
+  assert.equal(archivosEnv('/x/deploy-board', conPaquete('fidel-taskrunner')).length, 2);
+  assert.deepEqual(archivosEnv('/x/deploy-board', conPaquete('otro-panel')).map((r) => r.replace(/\\/g, '/')), ['/x/deploy-board/.env']);
+  assert.equal(archivosEnv('/x/deploy-board', { leer: () => { throw new Error('no existe'); } }).length, 1);
+});
+
+test('el puerto sale de DEPLOY_BOARD_PORT, y uno invalido cae al 4700', () => {
+  assert.equal(puertoDelEntorno({ DEPLOY_BOARD_PORT: '4800' }), 4800);
+  assert.equal(puertoDelEntorno({}), 4700);
+  assert.equal(puertoDelEntorno({ DEPLOY_BOARD_PORT: 'abc' }), 4700);
+  assert.equal(puertoDelEntorno({ DEPLOY_BOARD_PORT: '70000' }), 4700);
 });

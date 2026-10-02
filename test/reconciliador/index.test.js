@@ -711,3 +711,73 @@ test('__NEW que compite con una pareja exacta: 20 barajados dan el mismo resulta
     assert.deepEqual(huella(reconciliar({ repo: barajar(repo), adjuntos: barajar(adjuntos) })), esperado, `iteracion ${i}`);
   }
 });
+
+// ---------------- unico del work item: el mismo script de datos con y sin la convencion ----------------
+const ADJ_ACOPIO = '[U-24918] - PRE - Alta de reporte Entrega de Acopio - INSERT.sql';
+const SQL_ADJ_ACOPIO = `DECLARE @EnumId int = 100;
+SELECT @ReporteId = Id FROM [dbo].[Reporte] WHERE EnumId = @EnumId;
+IF @ReporteId IS NULL INSERT INTO [dbo].[Reporte] ([Id], [EnumId]) VALUES (@EnumId, @EnumId);`;
+const SQL_REPO_ACOPIO = `IF NOT EXISTS (SELECT 1 FROM [dbo].[Reporte] WHERE [EnumId] = 100)
+BEGIN INSERT INTO [dbo].[Reporte] ([Id], [EnumId]) VALUES (100, 100) END`;
+const adjAcopio = (nombre = ADJ_ACOPIO, sql = SQL_ADJ_ACOPIO) => armarScriptParcial(nombre, sql, 'adjunto', {
+  contenedorId: 25150, contenedorTipo: 'Task', wiIdFallback: 25150, responsables: { subioElAdjunto: { nombre: 'Beto' } },
+});
+const repoAcopio = (nombre = 'EntregaAcopio_Reporte.sql', sql = SQL_REPO_ACOPIO) => armarScriptParcial(nombre, sql, 'repo', {
+  carpeta: 'US-24918_Reporte_Entrega_De_Acopio', wiIdFallback: 24918, responsables: { commiteoEnElRepo: { nombre: 'Ana' } },
+});
+const codigosAcopio = (scripts) => detectarDesvios({ scripts, wis: [{ id: 24918, estado: 'Active' }], tasks: [], estados: {} })
+  .filter((d) => d.wiId === 24918 || d.scriptId).map((d) => d.codigo);
+
+test('el unico script del repo sin convencion y el unico adjunto del work item son UNA fila con D12', () => {
+  const r = reconciliar({ adjuntos: [adjAcopio()], repo: [repoAcopio()] });
+  assert.equal(r.length, 1, r.map((x) => x.id).join(','));
+  const x = r[0];
+  assert.equal(x.archivo, ADJ_ACOPIO, 'queda el adjunto: es lo que se sube');
+  assert.deepEqual([...x.fuentes].sort(), ['adjunto', 'repo']);
+  assert.equal(x.wiId, 24918);
+  assert.equal(x.contenidoDistinto, true);
+  assert.ok(x.aliases.includes(repoAcopio().id), JSON.stringify(x.aliases));
+  assert.deepEqual(x.responsables, { commiteoEnElRepo: { nombre: 'Ana' }, subioElAdjunto: { nombre: 'Beto' } });
+
+  const codigos = codigosAcopio(r);
+  assert.ok(codigos.includes('D12'), codigos.join(','));
+  for (const c of ['D5', 'D6', 'D7']) assert.equal(codigos.includes(c), false, `sobra ${c}: ${codigos.join(',')}`);
+  const d12 = detectarDesvios({ scripts: r, wis: [{ id: 24918, estado: 'Active' }], tasks: [], estados: {} }).find((d) => d.codigo === 'D12');
+  assert.match(d12.detalle, /EntregaAcopio_Reporte\.sql/);
+  assert.match(d12.detalle, /Se midio la del repo/);
+});
+
+test('si el adjunto no deja sonda, la fila unida se mide con la del repo en vez de quedar en "?"', () => {
+  assert.equal(adjAcopio().sondas.every((s) => s.tipo === 'sin_sonda'), true, 'precondicion: el adjunto no deja sonda');
+  const [x] = reconciliar({ adjuntos: [adjAcopio()], repo: [repoAcopio()] });
+  assert.equal(x.medidoDe, 'repo');
+  assert.ok(x.sondas.some((s) => s.tipo !== 'sin_sonda'), JSON.stringify(x.sondas));
+});
+
+test('si el adjunto SI deja sonda, se mide el adjunto: es lo que se sube', () => {
+  const [x] = reconciliar({ adjuntos: [adjAcopio(ADJ_ACOPIO, SQL_REPO_ACOPIO + ' --v2')], repo: [repoAcopio()] });
+  assert.equal(x.medidoDe, undefined);
+  assert.equal(x.archivo, ADJ_ACOPIO);
+});
+
+test('con dos adjuntos sin pareja en el work item no se elige: quedan separados', () => {
+  const otro = '[U-24918] - 02 - Otro script - INSERT.sql';
+  const r = reconciliar({ adjuntos: [adjAcopio(), adjAcopio(otro, 'SELECT 1')], repo: [repoAcopio()] });
+  assert.equal(r.length, 3, r.map((x) => x.id).join(','));
+});
+
+test('con dos scripts del repo sin convencion en el work item no se elige: quedan separados', () => {
+  const r = reconciliar({ adjuntos: [adjAcopio()], repo: [repoAcopio(), repoAcopio('Otro.sql', 'SELECT 2')] });
+  assert.equal(r.length, 3, r.map((x) => x.id).join(','));
+});
+
+test('si los dos traen objetos y no comparten ninguno, son scripts distintos: no se unen', () => {
+  const adjOtraTabla = adjAcopio(ADJ_ACOPIO, 'IF NOT EXISTS (SELECT 1 FROM [dbo].[Setting] WHERE [Clave] = \'X\') INSERT INTO [dbo].[Setting] VALUES (1)');
+  const r = reconciliar({ adjuntos: [adjOtraTabla], repo: [repoAcopio()] });
+  assert.equal(r.length, 2, r.map((x) => x.id).join(','));
+});
+
+test('un script del repo que ya trae la convencion no entra en esta union', () => {
+  const r = reconciliar({ adjuntos: [adjAcopio()], repo: [repoAcopio('[U-24918] - Otra cosa - INSERT.sql', 'SELECT 3')] });
+  assert.equal(r.length, 2, r.map((x) => x.id).join(','));
+});

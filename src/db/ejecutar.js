@@ -8,38 +8,14 @@ import { veredicto } from '../sondas/veredicto.js';
 // y este sistema no tiene forma de conectarse ni aunque se lo pidan.
 export const CATALOGOS = { dev: 'dev_fidel_db', stage: 'stage_fidel_db', sandbox: 'sandbox_fidel_db' };
 
-// Fallback al Web.config del Api.Net, que es de donde saca la conexion el script que este
-// sistema reemplaza. Se LEE, nunca se imprime ni se transcribe. Las variables de entorno
-// GANAN: el Web.config viaja igual a todos los ambientes, asi que su credencial no esta
-// acotada a dev, y lo correcto es un login de solo lectura propio en cuanto exista.
-export function credencialesDelWebConfig(ruta, deps = {}) {
-  const leer = deps.leer || ((r) => (fs.existsSync(r) ? fs.readFileSync(r, 'utf8') : null));
-  const xml = leer(ruta);
-  if (!xml) return null;
-  const m = xml.match(/connectionString="([^"]*Initial Catalog=[^"]*)"/i);
-  if (!m) return null;
-  const cs = m[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"');
-  const val = (re) => { const x = cs.match(re); return x ? x[1].trim() : null; };
-  const cred = {
-    server: val(/(?:Data Source|Server)\s*=\s*([^;]+)/i),
-    user: val(/(?:User ID|Uid)\s*=\s*([^;]+)/i),
-    pass: val(/(?:Password|Pwd)\s*=\s*([^;]+)/i),
-  };
-  return cred.server && cred.user && cred.pass ? cred : null;
-}
-
-export function credenciales(env = process.env, deps = {}) {
-  const deLasVariables = { server: env.SQL_SERVER, user: env.SQL_USER, pass: env.SQL_PASSWORD };
-  if (deLasVariables.server && deLasVariables.user && deLasVariables.pass) return deLasVariables;
-
-  const ruta = env.WEB_CONFIG || path.join(env.API_NET_DIR || '../Api.Net', 'Api', 'WebApp', 'Web.config');
-  const delConfig = (deps.leerWebConfig || credencialesDelWebConfig)(ruta, deps);
-  if (delConfig) return delConfig;
-
-  throw new Error(
-    'Faltan SQL_SERVER / SQL_USER / SQL_PASSWORD en el entorno y tampoco pude leer la conexion ' +
-    'del Web.config de Api.Net. Completa el .env o revisa API_NET_DIR.'
-  );
+// Solo del .env. Hubo un fallback al Web.config de Api.Net, resuelto desde la carpeta en la que
+// se lanzaba el proceso: en la copia distribuida no apuntaba a nada, y con API_NET_DIR apuntado a
+// un Api.Net real tomaba una credencial que no esta acotada a dev (el Web.config viaja igual a
+// todos los ambientes). Lo correcto es un login de solo lectura propio, cargado a mano en el .env.
+export function credenciales(env = process.env) {
+  const cred = { server: env.SQL_SERVER, user: env.SQL_USER, pass: env.SQL_PASSWORD };
+  if (cred.server && cred.user && cred.pass) return cred;
+  throw new Error('Faltan SQL_SERVER / SQL_USER / SQL_PASSWORD en deploy-board/.env: pediselos al equipo y completalos a mano.');
 }
 
 // Separado y exportado para poder testear los flags SIN levantar un proceso.
@@ -50,8 +26,12 @@ export function credenciales(env = process.env, deps = {}) {
 // hacen falta: con `-y 0` y `SET NOCOUNT ON` la salida arranca DIRECTO en el cuerpo del
 // modulo — sin cabecera de columna, sin linea de guiones y sin banner de filas afectadas.
 // Verificado sobre sp_getselectproducts: la linea 0 es "CREATE PROCEDURE [dbo].[...]".
+//
+// `-f 65001`: sin el, sqlcmd escribe en el codigo de pagina de la CONSOLA que lo lanzo, y el mismo
+// cuerpo de un SP con tildes llegaba distinto segun quien midiera (arrancar.bat hace chcp 65001,
+// una terminal comun no). Con UTF-8 fijo, la lectura no depende de la ventana.
 export function argsDeSqlcmd(cred, catalogo, consulta, { textoLargo = false } = {}) {
-  const base = ['-S', cred.server, '-U', cred.user, '-P', cred.pass, '-d', catalogo, '-l', '20', '-s', '', '-Q', consulta];
+  const base = ['-S', cred.server, '-U', cred.user, '-P', cred.pass, '-d', catalogo, '-l', '20', '-f', '65001', '-s', '', '-Q', consulta];
   return base.concat(textoLargo ? ['-y', '0'] : ['-h', '-1', '-W']);
 }
 
@@ -95,6 +75,10 @@ export async function medirAmbiente(scripts, ambiente, deps = {}) {
     // y perdia la medicion de TODOS los demas scripts del lote. El contrato que consulta.js
     // documenta es "se rechaza, y medirAmbiente la convierte en ?" — con la llamada afuera del
     // try, el codigo no cumplia el contrato que su propia dependencia promete.
+    if (s.base) {
+      out[s.id] = { estado: '?', nota: `Se ejecuta en ${s.base}, no en ${catalogo}: el panel no mide esa base.` };
+      continue;
+    }
     try {
       const consulta = consultaDeSondas(s.sondas || []);
       if (!consulta) {

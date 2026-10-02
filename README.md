@@ -26,6 +26,19 @@ nombre propio.
 - Ordena la lista **en orden de ejecución**: los `PRE` primero.
 - El `PRE` se reconoce en dos posiciones del nombre: antes del `NN` (`PRE - 01 - ...`) o
   justo después (`01 - PRE - ...`) — el equipo escribe las dos.
+- **Control contra el PR stage → main.** Con el link del PR de `Api.Net` pegado, "Medir con PR"
+  mide el sprint y después compara los `.sql` de `DB_Migrations` que trae el PR (de cualquier
+  carpeta de sprint) contra lo medido: lo que el PR trae y el panel no vio (por ejemplo, un
+  script commiteado en la carpeta de un sprint anterior), lo que el panel tiene y el PR no
+  trae, y el mismo script con otro contenido. Cada hallazgo dice dónde está, por qué y quién
+  responde. No mide ninguna base: compara listas. Si el PR falla, la medición se guarda igual.
+- **Pestaña Repos: pases de rama de todo el proyecto.** Elegís el pase (dev → stage,
+  stage → main o stage → dev) y "Medir" lista los repos de `Fidel` que tienen las tres ramas
+  (dev/develop, stage/master, main) con cuántos commits faltan pasar, el último, y si ya hay un
+  PR activo. "Crear PR" crea el `DevToStage` / `StageToMain` / `StageToDev` de ese repo y lo
+  abre; antes vuelve a medir ese repo, así que no duplica un PR ni abre uno vacío. Los
+  conflictos los resuelve el dev en Azure. Es la **única** acción del sistema que escribe en
+  Azure, y vive aparte (`src/ado/prs.js`).
 
 ## Qué NO hace
 
@@ -52,53 +65,52 @@ nombre propio.
 
 ## Instalación (para el resto del equipo)
 
-Hace falta **Git** y **Node**. Nada más: el sistema no tiene dependencias, así que no hay
-`npm install` que pueda fallar justo el día del deploy.
+El sistema vive en **FidelWorkSpace**, en `Tools/Paneles/deploy-board`, y se abre con
+`Tools/Paneles/Abrir deploy-board.bat`. Hace falta **Git** y **Node**. Nada más: el sistema no
+tiene dependencias, así que no hay `npm install` que pueda fallar justo el día del deploy.
 
-1. Bajá `instalar.bat` y ponelo en la carpeta donde quieras que viva el sistema.
-2. Doble click. Clona el repo en una subcarpeta `deploy-board` y deja un acceso directo
-   **deploy-board** en el Escritorio.
-3. Copiá `.env.example` a `.env` y completá `AZURE_PAT` y las credenciales de base.
-4. Abrí **deploy-board** desde el Escritorio.
+1. Tené un clon de FidelWorkSpace (cualquier rama sirve, ver "Cómo se actualiza").
+2. En `Tools/Paneles/deploy-board`, copiá `.env.example` a `.env` y completá `AZURE_PAT` y las
+   credenciales de base. `.env` y `estado/` no están en git: son de cada máquina.
+3. Abrí `Tools/Paneles/Abrir deploy-board.bat`.
 
 ### Cómo se actualiza
 
-De dos formas, y ninguna pide tocar una consola:
+Solo, cada vez que se abre, y ninguna forma pide tocar una consola:
 
-- **Al arrancar.** El sistema (`scripts\arrancar.bat`, que `iniciar.bat` lanza) hace
-  `git pull --ff-only` antes de levantar nada. Si no hay red, no hay remoto, o esa copia
-  tiene cambios locales, **arranca igual** y avisa: el sistema mide scripts, no depende de
-  estar al día.
+- **Al arrancar.** `scripts\arrancar.bat` (que `iniciar.bat` lanza) corre
+  `src/actualizar-cli.js`: trae `origin/main` y deja **solo la carpeta del sistema** igual a la
+  de `main`. No hace `pull` del repo: quien abre el panel puede estar en cualquier rama, con
+  cualquier trabajo propio en otras carpetas de FidelWorkSpace, y eso no se toca. Si no hay red,
+  o `main` todavía no tiene el sistema, **arranca igual** y avisa: el sistema mide scripts, no
+  depende de estar al día.
 - **Con el botón "Actualizar sistema"**, desde la pantalla. Si baja código nuevo, el servidor
   se apaga solo y el `.bat` lo vuelve a levantar ya actualizado; la pantalla espera y se
   recarga sola.
 
-`--ff-only` a propósito: si alguien tocó el código en su máquina, el pull **falla** en vez de
-mezclar. Un merge automático en la máquina de otro es la clase de sorpresa que nadie puede
-depurar el día del deploy.
+La actualización **pisa** la carpeta con la de `main` (`git restore --source=origin/main
+--worktree`). Un cambio local a mano en el sistema se pierde al abrirlo: el sistema se cambia en
+su copia de desarrollo y se publica. Como no toca el índice, en una rama atrasada `git status`
+muestra los archivos del sistema como modificados: es esperado.
 
-`iniciar.bat` **no se modifica nunca**: cmd lo lee por posición mientras corre, y un pull que
-lo cambie a mitad de camino lo hace seguir desde un renglón que ya no existe. Todo lo que puede
-cambiar vive en `scripts\arrancar.bat`, que se ejecuta desde una copia en `%TEMP%`. Hay un test
-que falla si `iniciar.bat` vuelve a hacer el pull él mismo.
-
-⚠️ La **primera** vez que una máquina con el `iniciar.bat` viejo baje esta versión, puede pasar
-una de dos cosas: la ventana se **cierra sola** (si el pull la actualiza justo al arrancar), o
-la pantalla se queda **esperando** después de apretar "Actualizar sistema". En los dos casos,
-abrí **deploy-board** de nuevo desde el Escritorio: a partir de ahí ya corre el lanzador nuevo.
+`iniciar.bat` **no se modifica nunca**: cmd lo lee por posición mientras corre, y una
+actualización que lo cambie a mitad de camino lo hace seguir desde un renglón que ya no existe.
+Todo lo que puede cambiar vive en `scripts\arrancar.bat`, que se ejecuta desde una copia en
+`%TEMP%`. Hay un test que falla si `iniciar.bat` vuelve a actualizar él mismo.
 
 ### Cómo se publica una versión nueva (esto lo hace quien mantiene el sistema)
 
-El código vive dentro del workspace `IA-JONA`, en `deploy-board/`. El repo que clonan los
-devs es una proyección de esa carpeta, no una copia aparte que haya que mantener a mano:
+El código se desarrolla dentro del workspace `IA-JONA`, en `deploy-board/`. Para publicar:
 
 ```bash
-cd "<workspace IA-JONA>"
-git subtree push --prefix=deploy-board https://github.com/Jonathan-Medrano/deploy-board.git main
+node deploy-board/scripts/publicar.mjs
 ```
 
-Desde ahí, cada dev lo recibe al arrancar o apretando **Actualizar sistema**. No hay que
-avisar ni mandar nada: el `.bat` sólo se manda una vez, la primera.
+Copia los archivos (sin `.git`, `node_modules`, `estado` ni `.env`) al clon local de
+FidelWorkSpace, en `Tools/Paneles/deploy-board`. Por defecto lo busca en
+`~/Desktop/FidelWorkSpace`; otra ubicación va en la variable de entorno `DEPLOY_BOARD_PUBLICAR_EN`. Después: commit en una
+rama de FidelWorkSpace y PR a `main`. Cuando se mergea, cada uno lo recibe al abrir el panel.
+
 ## Cómo se corre
 
 Dos formas, el mismo motor: el **tablero** (lo que mira el que va a subir) y la **consola**
@@ -218,11 +230,56 @@ Apuntada a una carpeta compartida, una marca de Ana la ve todo el equipo. Dejada
 default, cada uno ve las suyas — que es justo el problema que este sistema existe para
 resolver, así que **si el equipo lo va a usar en serio, esa variable hay que ponerla**.
 
-⚠️ **Las marcas se guardan por id de script, y el formato del id cambió en esta versión**
-(ya no lleva el `NN` ni el `PRE` — ver `idDeScript` en `src/fuentes/comun.js`). Una marca
-guardada por una versión anterior **no se va a encontrar**: hay que volver a marcarla. Que el
-id quede atado al contenido en vez de a la posición en el nombre es un cambio pendiente para
-una versión futura, no algo que esta trae.
+### Decisiones: marcar, ignorar y aceptar
+
+Todo lo que una persona decide vive en `decisiones.json`, **separado por sprint**:
+
+| Decisión | Se ata a | Motivo |
+|---|---|---|
+| **Corrió en main** (el check) | el hash del script | no |
+| **No tener en cuenta** (✕) | el hash del script | obligatorio |
+| **Aceptar como está** (un desvío) | la firma del desvío | obligatorio |
+
+- **Si el script cambia, la marca o el ignorado vencen solos.** La fila lo dice ("marcado sobre
+  otra versión") y el script vuelve a contar. Una marca vieja no puede tapar un SQL que nadie
+  miró. El hash lo pone el servidor desde la medición guardada, no la pantalla.
+- **La firma de un desvío es el hecho** (código, script, work item, task, título y detalle), no
+  quién es responsable ni la severidad. Si el hecho cambia, la aceptación no lo cubre.
+- **Aceptar no borra.** Lo aceptado queda tachado en "Aceptados", con autor, fecha y motivo, y
+  se puede reabrir. Deja de contar como bloqueante y sale de "Qué le falta a cada uno".
+- **Resuelto no es un botón.** Es el desvío que estaba en la medición anterior del mismo sprint
+  y en la nueva ya no está: aparece en "Resueltos desde la medición anterior".
+- Los desvíos de un script marcado o ignorado no figuran como pendientes de nadie.
+- Todo esto lo calcula `aplicarDecisiones` (`src/decisiones.js`) en el servidor. La pantalla
+  pinta lo que recibe, y la consola (`node src/cli.js report`) aplica lo mismo: los dos dan el
+  mismo veredicto, y la consola lista al final las decisiones que aplicó y las que vencieron.
+
+### Qué dice la ventana del sistema
+
+Mientras mide, la consola avisa con color en qué etapa va (Azure, repo, main, cada base) y al
+terminar cuánto tardó: en verde si está listo para subir, en amarillo si quedan bloqueantes, en
+rojo si falló. También anuncia cada decisión que alguien guarda desde la pantalla. Va por
+stderr, así `--json` sigue saliendo limpio; `NO_COLOR=1` apaga los colores.
+
+⚠️ **El `marcas.json` de versiones anteriores no se migra.** Sus ids cambiaron y no guardaba
+qué versión del script se marcó: aplicarlo sería inventar. Queda intacto en la carpeta, la
+pantalla avisa una vez, y lo ya subido hay que volver a marcarlo.
+
+### Qué pasa cuando dos guardan a la vez, o el archivo se rompe
+
+- **Cada guardado reemplaza el archivo de una vez** (escribe un temporal y lo renombra). Un
+  corte a la mitad deja el `decisiones.json` anterior entero, no un JSON truncado.
+- **`decisiones.json` lleva `version`.** La pantalla manda la versión que leyó; si otro guardó
+  en el medio, el servidor contesta 409 con lo que hay ahora y la pantalla reintenta tu cambio
+  encima **una** vez. No hay locks: en una carpeta de red no son confiables, así que dos
+  guardados en el mismo instante todavía pueden pisarse. El caso que sí cubre es el real:
+  decidir con la pantalla abierta desde hace un rato.
+- **Un `decisiones.json` ilegible no se lee como vacío.** La tabla se ve sin decisiones, con un
+  aviso, y **no se guarda nada** hasta que alguien lo revise a mano.
+- **La medición se guarda por sprint** (`vista-<sprint>.json`). Con la carpeta compartida,
+  medir un sprint ya no pisa la foto de otro. Al abrir, la pantalla muestra la medición más
+  reciente de cualquier sprint; un `vista.json` de versiones anteriores se sigue leyendo si
+  no hay otra (pero no se puede marcar sobre ella: no trae hashes; hay que medir de nuevo).
 
 ## Credenciales
 
@@ -344,7 +401,7 @@ archivos distintos.
 cd deploy-board && npm test
 ```
 
-425 tests. **No tocan red ni base**: el cliente de ADO, `git` y `sqlcmd` entran por inyección.
+524 tests. **No tocan red ni base**: el cliente de ADO, `git` y `sqlcmd` entran por inyección.
 
 ⚠️ `node --test` sin argumentos también toma `test-*.{js,cjs,mjs}` de cualquier lugar del
 árbol. Un archivo suelto con ese nombre suma tests fantasma al conteo.
@@ -368,14 +425,15 @@ src/vista.js       proyección del reporte al modelo que consume la pantalla
 src/marcas.js      las decisiones de una persona: subido a main, no tener en cuenta
 src/almacen.js     dónde se guardan esas decisiones y la última medición
 src/servidor.js    el tablero local (node:http, sin dependencias)
-src/actualizador.js  git pull --ff-only, para el boton de actualizar
+src/actualizador.js  deja la carpeta del sistema igual a origin/main (arranque y boton)
+src/actualizar-cli.js  la actualizacion al arrancar, que corre arrancar.bat
 src/entorno.js     lector de .env propio (sin depender de la version de Node)
 src/servidor-cli.js  arranque del tablero
 src/cli.js         arranque de la consola
 web/               la pantalla: HTML, CSS y JS de navegador, sin bundler
-instalar.bat          clona el sistema y deja el acceso directo en el Escritorio
 iniciar.bat           arranca el sistema; no se modifica nunca (ver Como se actualiza)
 scripts/arrancar.bat  actualiza, levanta y reinicia; corre desde una copia en TEMP
+scripts/publicar.mjs  copia el sistema al clon de FidelWorkSpace para el PR
 scripts/abrir.ps1     levanta el tablero y abre el navegador
 ```
 

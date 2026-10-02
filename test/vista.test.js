@@ -198,3 +198,36 @@ test('cada fila de stage -> dev dice si la trae el merge o si ya esta en la rama
   });
   assert.deepEqual(v.stageToDev.filas.map((f) => f.origen), ['rama', 'sprint']);
 });
+
+test('cada fila trae el hash del script: sin el una marca no se puede atar a lo que se marco', () => {
+  const v = construirVista({ ...reporteBase, orden: [script({ id: 'a', hash: 'h-a' })] });
+  assert.equal(v.filas[0].hash, 'h-a');
+  assert.ok(Object.prototype.hasOwnProperty.call(construirVista({ ...reporteBase, orden: [script({ id: 'a' })] }).filas[0], 'hash'));
+});
+
+test('cada desvio sale con su firma, y cada bloque de revisar con las firmas que lo forman', async () => {
+  const { firmaDe } = await import('../src/decisiones.js');
+  const d6 = { codigo: 'D6', severidad: 'alto', titulo: 'T', detalle: 'x', responsable: null, scriptId: 'a', wiId: 10 };
+  const v = construirVista({ ...reporteBase, desvios: [...reporteBase.desvios, d6] });
+  assert.equal(v.desvios[0].firma, firmaDe(reporteBase.desvios[0]));
+  assert.deepEqual(v.revisar[0].firmas, [firmaDe(d6)]);
+});
+
+test('la vista arma el link a la carpeta del sprint en el repo, y sin organizacion no arma nada', () => {
+  const rep = { ...reporteBase, repoScripts: { repo: 'Api.Net', rama: 'dev', carpeta: '/Api/DB_Migrations/Sprint_2026_09_02' } };
+  const v = construirVista(rep, { org: 'https://dev.azure.com/agenciap/', proyecto: 'Fidel' });
+  assert.equal(v.meta.repoBase, 'https://dev.azure.com/agenciap/Fidel/_git/Api.Net?path=%2FApi%2FDB_Migrations%2FSprint_2026_09_02&version=GBdev');
+  assert.equal(construirVista(rep).meta.repoBase, null);
+  assert.equal(construirVista(reporteBase, { org: 'o', proyecto: 'p' }).meta.repoBase, null, 'sin sprint elegido no hay carpeta');
+});
+
+test('el analisis del PR llega a la pantalla con link al PR, y un error llega como error', () => {
+  const cv = construirVista;
+  const base = { orden: [], ambientes: [], wis: [], desvios: [] };
+  const ok = cv({ ...base, analisisPr: { pr: { id: 7, repo: 'Api.Net', origen: 'master', destino: 'main' }, scripts: 2, hallazgos: [], avisos: ['x'] } },
+    { org: 'https://dev.azure.com/agenciap', proyecto: 'Fidel' });
+  assert.equal(ok.analisisPr.pr.link, 'https://dev.azure.com/agenciap/Fidel/_git/Api.Net/pullrequest/7');
+  assert.equal(ok.analisisPr.scripts, 2);
+  assert.deepEqual(cv({ ...base, analisisPr: { error: 'boom', hallazgos: [] } }).analisisPr, { error: 'boom', hallazgos: [] });
+  assert.equal(cv(base).analisisPr, null);
+});

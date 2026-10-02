@@ -14,26 +14,25 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem El puerto sale del mismo lugar que usa el servidor (DEPLOY_BOARD_PORT del .env, o 4700).
+set "PUERTO=4700"
+for /f %%p in ('node src\puerto-cli.js') do set "PUERTO=%%p"
+
 if "%~2"=="reinicio" goto servidor
 
 echo.
 echo   Buscando novedades del sistema...
-git pull --ff-only >nul 2>&1
-if errorlevel 1 (
-  echo   [!] No traje cambios ^(sin red, sin remoto, o tenes cambios locales^). Arranco igual.
-) else (
-  echo   Al dia.
-)
+node src/actualizar-cli.js
 
 rem El navegador se abre una sola vez, y recien cuando el servidor contesta: abrirlo antes
 rem muestra un error de conexion que se lee como "el sistema no anda". En un reinicio no se
 rem abre: la pantalla que ya estaba abierta espera y se recarga sola.
 start "" /b powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "for($i=0;$i -lt 40;$i++){try{Invoke-WebRequest http://localhost:4700/api/ping -UseBasicParsing -TimeoutSec 1 ^| Out-Null; Start-Process 'http://localhost:4700'; break}catch{Start-Sleep -Milliseconds 500}}"
+  "for($i=0;$i -lt 40;$i++){try{Invoke-WebRequest http://localhost:%PUERTO%/api/ping -UseBasicParsing -TimeoutSec 1 ^| Out-Null; Start-Process 'http://localhost:%PUERTO%'; break}catch{Start-Sleep -Milliseconds 500}}"
 
 :servidor
 echo.
-echo   deploy-board corriendo en http://localhost:4700
+echo   deploy-board corriendo en http://localhost:%PUERTO%
 echo   ^(dejá esta ventana abierta; cerrala para apagar el sistema^)
 echo.
 node src/servidor-cli.js

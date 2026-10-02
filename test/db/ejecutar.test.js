@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CATALOGOS, credenciales, credencialesDelWebConfig, medirAmbiente, parsearSalida, argsDeSqlcmd } from '../../src/db/ejecutar.js';
+import { CATALOGOS, credenciales, medirAmbiente, parsearSalida, argsDeSqlcmd } from '../../src/db/ejecutar.js';
 
 test('produccion NO es un ambiente conectable', () => {
   assert.equal('produccion' in CATALOGOS, false);
@@ -11,42 +11,21 @@ test('medir produccion tira error, no intenta conectarse', async () => {
 });
 
 test('sin credenciales el error dice que falta el .env y no filtra nada', () => {
-  assert.throws(
-    () => credenciales({ SQL_SERVER: '', SQL_USER: '', SQL_PASSWORD: '' }, { leerWebConfig: () => null }),
-    /\.env/
-  );
+  assert.throws(() => credenciales({ SQL_SERVER: '', SQL_USER: '', SQL_PASSWORD: '' }), /deploy-board\/\.env/);
 });
 
-test('las variables de entorno GANAN sobre el Web.config', () => {
-  const c = credenciales(
-    { SQL_SERVER: 's', SQL_USER: 'u', SQL_PASSWORD: 'p' },
-    { leerWebConfig: () => { throw new Error('no deberia mirar el Web.config'); } }
-  );
-  assert.deepEqual(c, { server: 's', user: 'u', pass: 'p' });
+test('las credenciales salen del .env', () => {
+  assert.deepEqual(credenciales({ SQL_SERVER: 's', SQL_USER: 'u', SQL_PASSWORD: 'p' }), { server: 's', user: 'u', pass: 'p' });
 });
 
-test('sin variables, saca la conexion del Web.config', () => {
-  const xml = '<add name="x" connectionString="Data Source=SRV;Initial Catalog=dev_fidel_db;User ID=lector;Password=secreta" />';
-  const c = credenciales({}, { leerWebConfig: (r, d) => credencialesDelWebConfig(r, { leer: () => xml }) });
-  assert.equal(c.server, 'SRV');
-  assert.equal(c.user, 'lector');
-});
-
-test('un Web.config sin connectionString no inventa credenciales: tira con un mensaje util', () => {
-  assert.throws(
-    () => credenciales({}, { leerWebConfig: () => null }),
-    /Completa el .env o revisa API_NET_DIR/
-  );
+test('sin SQL_* no se busca un Web.config de Api.Net: tira aunque API_NET_DIR o WEB_CONFIG esten puestos', () => {
+  assert.throws(() => credenciales({ API_NET_DIR: '../Api.Net', WEB_CONFIG: 'Web.config' }), /SQL_SERVER/);
 });
 
 test('el mensaje de error no filtra ningun valor de credencial', () => {
-  try {
-    credenciales({ SQL_SERVER: 'SRV', SQL_USER: 'lector', SQL_PASSWORD: 'SUPERSECRETA' }, { leerWebConfig: () => null });
-  } catch (e) {
-    assert.equal(/SUPERSECRETA/.test(e.message), false);
-  }
-  const e2 = (() => { try { credenciales({}, { leerWebConfig: () => null }); } catch (x) { return x; } })();
-  assert.equal(/Password|Pwd|User ID/.test(e2.message), false);
+  const e = (() => { try { credenciales({ SQL_SERVER: 'SRV', SQL_USER: 'lector', SQL_PASSWORD: '' }); } catch (x) { return x; } })();
+  assert.ok(e);
+  assert.equal(/SRV|lector/.test(e.message), false);
 });
 
 test('parsearSalida lee la salida REAL de sqlcmd, que viene con CRLF', () => {
@@ -106,6 +85,14 @@ test('la consulta de definicion lleva -y 0 SOLO: sqlcmd rechaza -h y -W junto co
   assert.equal(corto.includes('-y'), false);
 });
 
+test('sqlcmd sale siempre en UTF-8 (-f 65001), no en el codigo de pagina de la consola', () => {
+  const cred = { server: 's', user: 'u', pass: 'p' };
+  for (const opts of [{ textoLargo: true }, {}]) {
+    const args = argsDeSqlcmd(cred, 'dev_fidel_db', 'SELECT 1', opts);
+    assert.equal(args[args.indexOf('-f') + 1], '65001');
+  }
+});
+
 test('si sqlcmd falla, el script queda en ? con el motivo, no en OK', async () => {
   const scripts = [{ id: 'a', sondas: [{ id: 's0', tipo: 'tabla', tabla: 'P' }] }];
   const r = await medirAmbiente(scripts, 'dev', {
@@ -114,4 +101,11 @@ test('si sqlcmd falla, el script queda en ? con el motivo, no en OK', async () =
   });
   assert.equal(r.a.estado, '?');
   assert.match(r.a.nota, /sqlcmd/);
+});
+
+test('un script de otra base no se mide contra fidel_db: queda en ? diciendo donde se ejecuta', async () => {
+  const scripts = [{ id: 'ml', base: 'fidel_ml_db', sondas: [{ id: 's0', tipo: 'tabla', tabla: 'Setting' }] }];
+  const out = await medirAmbiente(scripts, 'dev', { cred: { server: 's', user: 'u', pass: 'p' }, correr: () => { throw new Error('no deberia consultar'); } });
+  assert.equal(out.ml.estado, '?');
+  assert.match(out.ml.nota, /fidel_ml_db/);
 });

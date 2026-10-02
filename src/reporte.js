@@ -138,13 +138,26 @@ export function accionDe(d) {
     case 'D5':  return 'Adjuntar el script a la tarjeta';
     case 'D6':  return 'Commitear el script al repo';
     case 'D7':  return 'Renombrar con la convencion [U-xxxxx]';
-    case 'D8':  return 'Corregir CantidadScripts en la US';
+    case 'D8':  return d.cuentan != null
+      ? `Corregir CantidadScripts en la US: dice ${d.declarado ?? 'vacio'}, son ${d.cuentan}`
+      : 'Corregir CantidadScripts en la US';
     case 'D9':  return 'Corregir TieneSP en la US';
     case 'D10': return 'Confirmar la numeracion: tarjeta contra repo';
     case 'D12': return 'Unificar las versiones del script';
     case 'D13': return `Revisar: el work item esta pausado pero el script ya corrio en ${(d.corrioEn || []).join(', ') || 'algun ambiente'}`;
     default:    return d.titulo;
   }
+}
+
+// A donde tiene que ir la persona para hacer el cambio, no solo para aceptarlo como esta.
+// Mover la task: la task. Commitear: la carpeta del sprint en el repo. Renombrar, unificar o
+// bajar el script para ejecutarlo: el work item donde esta adjunto. Corregir un campo: la US.
+export function dondeSeArregla(d) {
+  if (d.codigo === 'D1') return d.taskId != null ? { wi: d.taskId, que: 'task' } : null;
+  if (d.codigo === 'D6') return { repo: true };
+  const conAdjunto = ['D2', 'D3', 'D4', 'D7', 'D10', 'D11', 'D12', 'D13'];
+  const wi = conAdjunto.includes(d.codigo) ? (d.contenedorId ?? d.wiId) : d.wiId;
+  return wi != null ? { wi, que: 'wi' } : null;
 }
 
 const PESO = { bloqueante: 0, alto: 1, medio: 2 };
@@ -167,6 +180,7 @@ export function agruparPorResponsable(desvios) {
 
     if (yaEsta) {
       yaEsta.motivos.push(d.detalle);
+      if (d.firma) yaEsta.firmas.push(d.firma);
       // Gana la severidad mas alta: si una de las tres razones bloquea, la accion bloquea.
       if (PESO[d.severidad] < PESO[yaEsta.severidad]) {
         yaEsta.severidad = d.severidad;
@@ -179,6 +193,8 @@ export function agruparPorResponsable(desvios) {
     g.pendientes.push({
       codigo: d.codigo, severidad: d.severidad, scriptId: d.scriptId ?? null,
       accion: accionDe(d), motivos: [d.detalle],
+      firmas: d.firma ? [d.firma] : [],
+      donde: dondeSeArregla(d),
     });
   }
   return [...grupos.values()]
@@ -254,6 +270,23 @@ export function formatearReporte(r) {
       L.push(`     ${n.archivo}`);
     }
     L.push(`  Quien lo tiene que revisar: ${g.responsable || '(sin responsable identificado)'}`);
+  }
+
+  // Lo que el tablero decidio y la consola aplico. Sin esta seccion, un "LISTO" de la consola
+  // con desvios aceptados no se puede distinguir de uno limpio.
+  const dec = r.decisiones;
+  if (dec) {
+    L.push('');
+    L.push(`DECISIONES DEL TABLERO${dec.sprint ? ` (${dec.sprint})` : ''}`);
+    if (dec.danadas) L.push('  ⚠ El archivo de decisiones esta danado: NO se aplico ninguna. Revisalo a mano.');
+    const quien = (x) => `${x.por || 'alguien'}${x.fecha ? ' · ' + x.fecha : ''}`;
+    for (const x of dec.aceptados) L.push(`  Aceptado ${x.codigo} ${x.titulo} — ${quien(x)}: ${x.motivo || ''}`);
+    for (const x of dec.ignorados) L.push(`  Sin tener en cuenta ${x.archivo} — ${quien(x)}: ${x.motivo || ''}`);
+    for (const x of dec.marcados) L.push(`  Marcado en main ${x.archivo} — ${quien(x)}`);
+    for (const a of dec.vencidos) L.push(`  ⚠ Decision sobre otra version del script, NO aplicada: ${a}`);
+    if (!dec.danadas && !dec.aceptados.length && !dec.ignorados.length && !dec.marcados.length && !dec.vencidos.length) {
+      L.push('  Ninguna para este sprint.');
+    }
   }
 
   if (r.sinVeredicto.length) {

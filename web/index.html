@@ -177,6 +177,7 @@
   .scriptname .nota-subida.ok{color:var(--good)}
   .scriptname .nota-subida.aviso{color:var(--warn); font-weight:600}
   .wi em.fuera-sprint{color:var(--warn); cursor:help; border-bottom:1px dotted currentColor; display:inline-block}
+  .scriptname em.otra-base{font-style:normal; font-size:.78em; margin-left:.5em; padding:0 .4em; border:1px solid currentColor; border-radius:3px; color:var(--warn); cursor:help; white-space:nowrap}
   .acc{font-size:11px; letter-spacing:.06em; color:var(--muted); white-space:nowrap}
   .amb{font-size:12px; font-weight:600; white-space:nowrap; font-variant-numeric:tabular-nums}
   .amb.ok{color:var(--faint); font-weight:500} .amb.falta{color:var(--bad)} .amb.dud{color:var(--warn)}
@@ -225,6 +226,23 @@
   .pend .motivo ul{margin:3px 0 0; padding-left:14px}
 
   .revisar{display:flex; flex-direction:column; gap:8px}
+  .btn-dec{font:inherit; font-size:12px; padding:3px 9px; margin-top:6px; border:1px solid var(--line); border-radius:3px; background:var(--surface); color:var(--muted); cursor:pointer; align-self:flex-start}
+  .btn-dec:hover{color:var(--accent); border-color:var(--accent)}
+  .btn-dec:focus-visible{outline:2px solid var(--accent); outline-offset:1px}
+  .vencida{display:block; font-size:10.5px; color:var(--bad); font-style:italic}
+  #pedirMotivo{display:flex; flex-direction:column; gap:6px; margin:10px 0; padding:12px 14px; border:1px solid var(--accent); border-radius:4px; background:var(--surface)}
+  #pedirMotivo[hidden]{display:none}
+  #pedirMotivo label{font-size:13px; font-weight:600; overflow-wrap:anywhere}
+  .pm-fila{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  .pm-fila input{flex:1 1 220px; min-width:0; font:inherit; font-size:13px; padding:5px 8px; border:1px solid var(--line); border-radius:3px; background:var(--surface-2); color:inherit}
+  .pm-fila .btn-dec{margin-top:0}
+  .pend-acciones{display:flex; flex-wrap:wrap; gap:6px}
+  .btn-dec.arreglar{text-decoration:none; color:var(--accent); border-color:var(--accent)}
+  .lista-dec{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px}
+  .lista-dec li{display:flex; justify-content:space-between; gap:12px; align-items:flex-start; padding:9px 12px; background:var(--surface); border:1px solid var(--line); border-radius:4px}
+  .lista-dec .motivo{color:var(--muted); font-size:12px; margin-top:2px; overflow-wrap:anywhere}
+  .lista-dec s{color:var(--muted)}
+  .quien-acepto{font-size:12px; margin-top:4px; overflow-wrap:anywhere}
   .rev{background:var(--surface); border:1px solid var(--line); border-radius:4px}
   .rev > summary{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; padding:10px 14px; cursor:pointer; list-style:none}
   .rev > summary::-webkit-details-marker{display:none}
@@ -269,6 +287,11 @@
   .selector-sprint label{display:flex; align-items:center; gap:7px; font-size:12px; color:var(--faint)}
   .selector-sprint select{font:inherit; font-size:13px; padding:5px 8px; border-radius:3px; border:1px solid var(--line); background:var(--surface); color:var(--ink); max-width:260px}
   #avisoCarpeta{margin:0; font-size:12.5px; color:var(--warn)}
+  .barra-pr{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:10px 0}
+  .barra-pr label{display:flex; align-items:center; gap:7px; font-size:12px; color:var(--faint); flex:1 1 320px}
+  .barra-pr input{font:inherit; font-size:13px; padding:5px 8px; border-radius:3px; border:1px solid var(--line); background:var(--surface); color:var(--ink); flex:1; min-width:0}
+  .pr-cab{margin:0 0 10px; font-size:13px}
+  .pr-error{margin:0; color:var(--bad); font-size:13px}
   .barra-filtros{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
   #estados{display:flex; flex-direction:column; gap:7px}
   .franja{display:flex; gap:6px; flex-wrap:wrap; align-items:center}
@@ -314,6 +337,17 @@
   :root[data-theme="dark"] .btn-actualizar{color:#08201f}
   .btn-actualizar:hover{opacity:.9}
   .btn-actualizar:disabled{opacity:.5; cursor:not-allowed}
+  .tabs{display:flex; gap:4px; border-bottom:1px solid var(--line); margin:6px 0 14px}
+  .tab{font:inherit; font-size:13px; padding:8px 16px; border:1px solid transparent; border-bottom:none; border-radius:4px 4px 0 0; background:none; color:var(--faint); cursor:pointer; margin-bottom:-1px}
+  .tab[aria-selected="true"]{background:var(--surface); border-color:var(--line); color:var(--ink); font-weight:600}
+  .tab:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .sel-par{display:flex; align-items:center; gap:7px; font-size:12px; color:var(--faint)}
+  .sel-par select{font:inherit; font-size:13px; padding:5px 8px; border-radius:3px; border:1px solid var(--line); background:var(--surface); color:var(--ink)}
+  #reposAviso{margin:10px 0; font-size:12.5px; color:var(--warn)}
+  .tabla-repos td.num{font-family:"IBM Plex Mono",monospace; text-align:right}
+  .tabla-repos .acc{white-space:nowrap; text-align:right}
+  .tabla-repos .err{color:var(--bad)}
+  .tabla-repos .sub{font-size:11.5px; color:var(--faint)}
   @media (prefers-reduced-motion: reduce){*{animation:none!important; transition:none!important}}
 </style>
 </head>
@@ -325,12 +359,31 @@
     <h1>Antes de Subir</h1>
   </header>
 
+  <nav class="tabs" role="tablist" aria-label="Qué estás mirando">
+    <button type="button" role="tab" class="tab" id="tabBtnScripts" data-tab="scripts" aria-selected="true" aria-controls="tabScripts">Scripts</button>
+    <button type="button" role="tab" class="tab" id="tabBtnRepos" data-tab="repos" aria-selected="false" aria-controls="tabRepos">Repos</button>
+  </nav>
+
   <div id="actualizacion" hidden>
     <span id="actualizacionTexto"></span>
     <button type="button" id="actualizarSistema" class="btn-actualizar">Actualizar sistema</button>
   </div>
 
   <p id="aviso" hidden></p>
+  <form id="pedirMotivo" hidden>
+    <label for="pedirMotivoTexto" id="pedirMotivoTitulo"></label>
+    <div class="pm-fila">
+      <input id="pedirMotivoTexto" type="text" maxlength="500" autocomplete="off" placeholder="Motivo (obligatorio)">
+      <button type="submit" class="btn-dec">Guardar</button>
+      <button type="button" class="btn-dec" id="pedirMotivoCancelar">Cancelar</button>
+    </div>
+  </form>
+
+  <div id="tabScripts" role="tabpanel" aria-labelledby="tabBtnScripts">
+  <div class="barra-pr">
+    <label for="prUrl">PR stage → main de Api.Net <input id="prUrl" type="text" autocomplete="off" placeholder="https://dev.azure.com/…/_git/Api.Net/pullrequest/NNNNN"></label>
+    <button type="button" id="medirConPr" class="btn-secundario" disabled>Medir con PR</button>
+  </div>
 
   <div id="vacio" class="limites" hidden>
     <p>Todavía no se midió nada en esta máquina.</p>
@@ -366,6 +419,11 @@
 
     <div class="contadores" id="contadores"></div>
 
+    <details class="seccion" id="secPr" data-sec="pr" open hidden>
+      <summary class="sec-head"><h2>Análisis del PR <span class="cuenta" id="prCuenta"></span></h2><p>Los scripts que trae el PR contra lo que midió el panel. No consulta ninguna base.</p></summary>
+      <div class="sec-body" id="analisisPr"></div>
+    </details>
+
     <details class="seccion" id="secOrden" data-sec="orden" open>
       <summary class="sec-head"><h2>Orden de ejecución</h2></summary>
       <div class="sec-body">
@@ -395,7 +453,43 @@
         <div class="revisar" id="revisar"></div>
       </div>
     </details>
+
+    <details class="seccion" id="secAceptados" data-sec="aceptados" hidden>
+      <summary class="sec-head"><h2>Aceptados <span class="cuenta" id="aceptadosCuenta"></span></h2><p>Desvíos que alguien dio por buenos, con su motivo. No cuentan como pendientes.</p></summary>
+      <div class="sec-body"><ul class="lista-dec" id="aceptados"></ul></div>
+    </details>
+
+    <details class="seccion" id="secResueltos" data-sec="resueltos" hidden>
+      <summary class="sec-head"><h2>Resueltos desde la medición anterior <span class="cuenta" id="resueltosCuenta"></span></h2><p>Estaban en la medición anterior de este sprint y en esta ya no.</p></summary>
+      <div class="sec-body"><ul class="lista-dec" id="resueltos"></ul></div>
+    </details>
   </div>
+  </div>
+
+  <section id="tabRepos" role="tabpanel" aria-labelledby="tabBtnRepos" hidden>
+    <div class="controles">
+      <label class="sel-par">Pase
+        <select id="selPar">
+          <option value="dev-stage">dev → stage</option>
+          <option value="stage-main">stage → main</option>
+          <option value="stage-dev">stage → dev</option>
+        </select>
+      </label>
+      <button type="button" id="medirRepos" class="btn-actualizar">Medir</button>
+      <span id="reposMedido" class="mono"></span>
+    </div>
+    <p id="reposAviso" hidden></p>
+    <div class="tabla-wrap" id="reposTablaWrap" hidden>
+      <table class="tabla-repos">
+        <thead><tr><th>Repo</th><th>Ramas</th><th>Pendientes</th><th>Último commit</th><th>PR activo</th><th></th></tr></thead>
+        <tbody id="reposFilas"></tbody>
+      </table>
+    </div>
+    <details class="seccion" id="reposSinCambios" hidden>
+      <summary class="sec-head"><h2>Sin cambios <span class="cuenta" id="reposSinCambiosCuenta"></span></h2></summary>
+      <div class="sec-body"><ul class="lista-dec" id="reposSinCambiosLista"></ul></div>
+    </details>
+  </section>
 
   <footer>
     <details class="no-medido">
@@ -406,10 +500,11 @@
       </ul>
     </details>
     <p>Datos medidos por <span class="mono">deploy-board</span> · lectura pura: solo <span class="mono">SELECT</span> sobre catálogo del sistema, nunca escribe en ninguna base y nunca se conecta a producción.
-    Las marcas de <strong>main</strong> se guardan en <span class="mono" id="estadoDir"></span>.</p>
+    Las marcas de <strong>main</strong>, lo ignorado y lo aceptado se guardan en <span class="mono" id="estadoDir"></span>.</p>
   </footer>
 </div>
 <script src="util.js"></script>
 <script src="app.js"></script>
+<script src="repos.js"></script>
 </body>
 </html>

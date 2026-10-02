@@ -4,9 +4,20 @@ const ACCIONES = new Set(['CREATE', 'ALTER', 'DROP', 'INSERT', 'UPDATE', 'DELETE
 // contiene: una Task que junta los .sql de un sprint es un contenedor de almacenamiento,
 // no el origen del cambio. Un [XXXXX] honesto se corrige mirando el archivo; un id
 // deducido manda a alguien a leer el work item que no es.
+// Un script que no corre en fidel_db lleva la base adelante: "[fidel_ml_db] - [U-25155] - ...".
+// Sin reconocerlo, el resto del nombre no matcheaba la convencion (D7/D11 falsos) y el script
+// se media contra dev_fidel_db, donde no tiene por que estar. `base` queda en null para fidel_db.
+export function baseDelNombre(nombre) {
+  const m = String(nombre).match(/^\[\s*([a-z0-9_]+_db)\s*\]\s*-\s*(.+)$/i);
+  if (!m) return { base: null, resto: String(nombre) };
+  const base = m[1].toLowerCase();
+  return { base: base === 'fidel_db' ? null : base, resto: m[2] };
+}
+
 export function parsearNombre(archivo) {
-  const base = String(archivo).replace(/\.sql$/i, '');
-  const vacio = { archivo, wiTipo: null, wiId: null, esPre: false, orden: null, accion: null, descripcion: base };
+  const { base: baseDeDatos, resto } = baseDelNombre(String(archivo).replace(/\.sql$/i, ''));
+  const base = resto;
+  const vacio = { archivo, base: baseDeDatos, wiTipo: null, wiId: null, esPre: false, orden: null, accion: null, descripcion: base };
 
   const con = base.match(/^\[\s*(?:([TBU])\s*-\s*)?(\d+)?\s*[X]*\s*\]\s*-\s*(.+)$/i);
   if (!con) return vacio;
@@ -33,5 +44,5 @@ export function parsearNombre(archivo) {
     accion = partes.pop().toUpperCase();
   }
 
-  return { archivo, wiTipo, wiId, esPre, orden, accion, descripcion: partes.join(' - ') };
+  return { archivo, base: baseDeDatos, wiTipo, wiId, esPre, orden, accion, descripcion: partes.join(' - ') };
 }
