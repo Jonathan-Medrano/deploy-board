@@ -116,10 +116,22 @@ test('listarRamas devuelve los nombres sin refs/heads/ y escapa el repo', async 
 });
 
 test('contarPendientes lee aheadCount del diff destino -> origen', async () => {
-  const { urls, fake } = fetchQueResponde({ aheadCount: 7, behindCount: 2, changes: [] });
+  const { urls, fake } = fetchQueResponde({ aheadCount: 7, behindCount: 2, changeCounts: { Edit: 3, Add: 1 }, changes: [{ item: { path: '/src' } }] });
   const c = crearClienteAdo(env, { fetch: fake });
-  assert.equal(await c.contarPendientes('Api.Net', 'dev', 'master'), 7);
+  assert.deepEqual(await c.contarPendientes('Api.Net', 'dev', 'master'), { commits: 7, conArchivos: true });
   assert.match(urls[0], /baseVersion=master&baseVersionType=branch&targetVersion=dev&targetVersionType=branch/);
+});
+
+test('commits adelante sin archivos que cambien no son algo para promocionar', async () => {
+  const { fake } = fetchQueResponde({ aheadCount: 4, behindCount: 0, changeCounts: {}, changes: [] });
+  const c = crearClienteAdo(env, { fetch: fake });
+  assert.deepEqual(await c.contarPendientes('PedidosWeb', 'stage', 'develop'), { commits: 4, conArchivos: false });
+});
+
+test('sin changeCounts alcanza con que el diff traiga algun cambio', async () => {
+  const { fake } = fetchQueResponde({ aheadCount: 2, changes: [{ item: { path: '/a.cs' } }] });
+  const c = crearClienteAdo(env, { fetch: fake });
+  assert.deepEqual(await c.contarPendientes('Api.Net', 'dev', 'master'), { commits: 2, conArchivos: true });
 });
 
 test('sin aheadCount no se inventa un cero: es un error', async () => {

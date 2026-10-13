@@ -77,6 +77,40 @@ test('sin prefijo, o con [fidel_db], la base queda en null: es la de siempre', (
   assert.equal(parsearNombre('[fidel_db] - [U-25155] - Algo - ALTER.sql').wiId, 25155);
 });
 
+test('el prefijo de base sin corchetes, como lo pide la convencion, se reconoce', () => {
+  const r = parsearNombre('fidel_db - [U-25199] - PRE - Barras y categorias en sp_getselectproducts - ALTER.sql');
+  assert.equal(r.base, null);
+  assert.equal(r.wiId, 25199);
+  assert.equal(r.esPre, true);
+  assert.equal(r.accion, 'ALTER');
+  assert.equal(r.descripcion, 'Barras y categorias en sp_getselectproducts');
+});
+
+test('sin espacio despues del guion del prefijo igual se parsea', () => {
+  const r = parsearNombre('fidel_db -[U-25199] - PRE - Barras y categorias en sp_getselectproducts_search - ALTER.sql');
+  assert.equal(r.wiId, 25199);
+  assert.equal(r.esPre, true);
+  assert.equal(r.descripcion, 'Barras y categorias en sp_getselectproducts_search');
+});
+
+test('otra base sin corchetes se etiqueta y no se mide contra fidel_db', () => {
+  const r = parsearNombre('fidel_tn_db - [U-25462] - PRE - Fecha de corte obligatoria en BaseToken - ALTER.sql');
+  assert.equal(r.base, 'fidel_tn_db');
+  assert.equal(r.wiId, 25462);
+  assert.equal(r.esPre, true);
+});
+
+test('con prefijo y sin prefijo el mismo script parsea igual', () => {
+  const a = parsearNombre('fidel_db - [U-25199] - PRE - Barras y categorias en sp_getselectproducts - ALTER.sql');
+  const b = parsearNombre('[U-25199] - PRE - Barras y categorias en sp_getselectproducts - ALTER.sql');
+  for (const k of ['base', 'wiTipo', 'wiId', 'esPre', 'orden', 'accion', 'descripcion']) assert.equal(a[k], b[k], k);
+});
+
+test('un nombre sin prefijo que termina en _db no se come la descripcion', () => {
+  const r = parsearNombre('sp_getselectproducts__OLD.sql');
+  assert.equal(r.base, null);
+});
+
 test('un corchete que no es una base no se toma como base', () => {
   const r = parsearNombre('[XXXXX] - Algo - ALTER.sql');
   assert.equal(r.base, null);

@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { medirUnRepo, medirRepos } from '../src/repos/medir.js';
 
-function adoFalso({ repos = [], ramas = {}, pendientes = {}, activos = {}, fallaRamas = [], fallaDiff = [] } = {}) {
+function adoFalso({ repos = [], ramas = {}, pendientes = {}, activos = {}, sinArchivos = [], fallaRamas = [], fallaDiff = [] } = {}) {
   const llamadas = { commits: [] };
   return {
     llamadas,
     listarRepos: async () => repos,
     listarRamas: async (r) => { if (fallaRamas.includes(r)) throw new Error(`403 en ${r}`); return ramas[r] || []; },
-    contarPendientes: async (r) => { if (fallaDiff.includes(r)) throw new Error(`500 en ${r}`); return pendientes[r] || 0; },
+    contarPendientes: async (r) => { if (fallaDiff.includes(r)) throw new Error(`500 en ${r}`); return { commits: pendientes[r] || 0, conArchivos: !sinArchivos.includes(r) }; },
     commitsPendientes: async (r, o, d, top) => {
       llamadas.commits.push({ r, o, d, top });
       return [{ id: 'aaaa1111', mensaje: 'feat: x', autor: 'Ana', fecha: '2026-10-01' }];
@@ -23,7 +23,7 @@ const TRES = ['dev', 'stage', 'main'];
 test('un repo sin cambios no pide la lista de commits', async () => {
   const ado = adoFalso();
   const f = await medirUnRepo(ado, { repo: 'R', ramas: { dev: 'dev', stage: 'stage', main: 'main' }, par: 'stage-main' });
-  assert.deepEqual(f, { repo: 'R', ramas: { origen: 'stage', destino: 'main' }, pendientes: 0, ultimo: null, commits: [], prActivo: null, error: null });
+  assert.deepEqual(f, { repo: 'R', ramas: { origen: 'stage', destino: 'main' }, pendientes: 0, sinArchivos: 0, ultimo: null, commits: [], prActivo: null, error: null });
   assert.equal(ado.llamadas.commits.length, 0);
 });
 
@@ -33,6 +33,14 @@ test('con cambios trae hasta 50 commits y el ultimo es el primero de la lista', 
   assert.equal(f.pendientes, 3);
   assert.equal(f.ultimo.autor, 'Ana');
   assert.deepEqual(ado.llamadas.commits, [{ r: 'R', o: 'develop', d: 'stage', top: 50 }]);
+});
+
+test('commits adelante sin archivos que cambien no ofrecen PR: se cuentan aparte', async () => {
+  const ado = adoFalso({ pendientes: { R: 4 }, sinArchivos: ['R'] });
+  const f = await medirUnRepo(ado, { repo: 'R', ramas: { dev: 'develop', stage: 'stage', main: 'main' }, par: 'stage-dev' });
+  assert.equal(f.pendientes, 0);
+  assert.equal(f.sinArchivos, 4);
+  assert.equal(ado.llamadas.commits.length, 0);
 });
 
 test('con varios PR activos se muestra el mas nuevo, con link', async () => {
@@ -74,7 +82,7 @@ test('nunca hay mas de 4 repos en vuelo (8 llamadas: pendientes y PRs van juntas
   const ado = {
     listarRepos: async () => repos,
     listarRamas: () => lento(TRES),
-    contarPendientes: () => lento(0),
+    contarPendientes: () => lento({ commits: 0, conArchivos: false }),
     prsActivos: () => lento([]),
     commitsPendientes: async () => [],
     urlDePr: () => '',

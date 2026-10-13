@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { crearPrDePromocion } from '../src/repos/promover.js';
 
-function ado({ ramas = ['dev', 'master', 'main'], pendientes = 2, activos = [] } = {}) {
+function ado({ ramas = ['dev', 'master', 'main'], pendientes = 2, conArchivos = true, activos = [] } = {}) {
   return {
     listarRamas: async () => ramas,
-    contarPendientes: async () => pendientes,
+    contarPendientes: async () => ({ commits: pendientes, conArchivos }),
     prsActivos: async () => activos,
     commitsPendientes: async () => [{ id: 'aaaa1111', mensaje: 'feat: x', autor: 'Ana', fecha: '2026-10-01' }],
     urlDePr: (r, id) => `https://ado/${r}/pullrequest/${id}`,
@@ -35,6 +35,13 @@ test('con un PR activo no crea: 409 con el link del existente', async () => {
 test('sin cambios al momento de crear no crea: 409', async () => {
   await assert.rejects(
     () => crearPrDePromocion(ado({ pendientes: 0 }), { repo: 'R', par: 'dev-stage' }, { crearPr: async () => { throw new Error('no'); } }),
+    (e) => e.status === 409 && /Ya no hay cambios/.test(e.message),
+  );
+});
+
+test('commits sin archivos que cambien no crean un PR vacio: 409', async () => {
+  await assert.rejects(
+    () => crearPrDePromocion(ado({ pendientes: 3, conArchivos: false }), { repo: 'R', par: 'dev-stage' }, { crearPr: async () => { throw new Error('no'); } }),
     (e) => e.status === 409 && /Ya no hay cambios/.test(e.message),
   );
 });

@@ -204,12 +204,18 @@ export function crearClienteAdo(env = process.env, deps = {}) {
 
   // Commits del origen que el destino no tiene: aheadCount del diff destino -> origen. Si Azure
   // no lo trae, se dice: un cero inventado se lee como "no hay nada que promocionar".
+  // Commits adelante no es lo mismo que algo para promocionar: merges de vuelta o cambios que ya
+  // llegaron por otro camino suman commits y el PR sale con 0 archivos (medido 2026-10-13:
+  // PedidosWeb 4 commits, Fidel.WooCommerce.Api 3, FidelFront 1, todos sin archivos). El mismo
+  // diff contra el ancestro comun es el que muestra el PR en "Files", y changeCounts trae el
+  // total aunque se pida $top=1.
   async function contarPendientes(repo, origen, destino) {
     const url = `${git(repo)}/diffs/commits?baseVersion=${encodeURIComponent(destino)}&baseVersionType=branch` +
       `&targetVersion=${encodeURIComponent(origen)}&targetVersionType=branch&$top=1&${API}`;
     const r = await (await api(url)).json();
     if (typeof r.aheadCount !== 'number') throw new Error(`Azure no devolvió aheadCount para ${origen} → ${destino} en ${repo}`);
-    return r.aheadCount;
+    const cambios = Object.values(r.changeCounts || {}).reduce((a, n) => a + (Number(n) || 0), 0);
+    return { commits: r.aheadCount, conArchivos: cambios > 0 || (r.changes || []).length > 0 };
   }
 
   // Azure devuelve los commits que compareVersion tiene y itemVersion no: el origen va en

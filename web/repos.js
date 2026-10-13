@@ -81,7 +81,8 @@
     document.getElementById('reposSinCambios').hidden = !sinCambios.length;
     document.getElementById('reposSinCambiosCuenta').textContent = String(sinCambios.length);
     document.getElementById('reposSinCambiosLista').innerHTML = sinCambios.map(function(f){
-      return '<li><span>' + esc(f.repo) + '</span><span class="mono sub">' + esc(f.ramas.origen) + ' → ' + esc(f.ramas.destino) + '</span></li>';
+      var nota = f.sinArchivos ? ' <span class="sub">· ' + esc(String(f.sinArchivos)) + (f.sinArchivos === 1 ? ' commit' : ' commits') + ' sin cambios de archivos</span>' : '';
+      return '<li><span>' + esc(f.repo) + '</span><span class="mono sub">' + esc(f.ramas.origen) + ' → ' + esc(f.ramas.destino) + '</span>' + nota + '</li>';
     }).join('');
     if (!tablaVigente()) avisarRepos('La tabla es de ' + NOMBRE_PAR[MEDIDO.par] + ': medí ' + NOMBRE_PAR[selPar.value] + ' para crear esos PRs.');
     else if (!conAlgo.length) avisarRepos('Ningún repo tiene cambios para ' + NOMBRE_PAR[MEDIDO.par] + '.');

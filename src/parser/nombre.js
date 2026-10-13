@@ -4,14 +4,17 @@ const ACCIONES = new Set(['CREATE', 'ALTER', 'DROP', 'INSERT', 'UPDATE', 'DELETE
 // contiene: una Task que junta los .sql de un sprint es un contenedor de almacenamiento,
 // no el origen del cambio. Un [XXXXX] honesto se corrige mirando el archivo; un id
 // deducido manda a alguien a leer el work item que no es.
-// Un script que no corre en fidel_db lleva la base adelante: "[fidel_ml_db] - [U-25155] - ...".
+// Un script que no corre en fidel_db lleva la base adelante: "fidel_ml_db - [U-25155] - ...".
 // Sin reconocerlo, el resto del nombre no matcheaba la convencion (D7/D11 falsos) y el script
 // se media contra dev_fidel_db, donde no tiene por que estar. `base` queda en null para fidel_db.
+// La convencion del equipo (/core:scripts-sql) la escribe SIN corchetes: "fidel_db - [U-...]".
+// Solo con corchetes, el adjunto perdia el id, el PRE y la accion, y salia duplicado de su
+// copia del repo. El espacio despues del guion es opcional: "fidel_db -[U-25199]" existe.
 export function baseDelNombre(nombre) {
-  const m = String(nombre).match(/^\[\s*([a-z0-9_]+_db)\s*\]\s*-\s*(.+)$/i);
+  const m = String(nombre).match(/^(?:\[\s*([a-z0-9_]+_db)\s*\]|([a-z0-9_]+_db))\s*-\s*(.+)$/i);
   if (!m) return { base: null, resto: String(nombre) };
-  const base = m[1].toLowerCase();
-  return { base: base === 'fidel_db' ? null : base, resto: m[2] };
+  const base = (m[1] || m[2]).toLowerCase();
+  return { base: base === 'fidel_db' ? null : base, resto: m[3] };
 }
 
 export function parsearNombre(archivo) {

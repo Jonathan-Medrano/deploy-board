@@ -17,16 +17,20 @@ async function enLotes(items, n, fn) {
 
 export async function medirUnRepo(ado, { repo, ramas, par }) {
   const { origen, destino } = ramasDelPar(ramas, par);
-  const base = { repo, ramas: { origen, destino }, pendientes: 0, ultimo: null, commits: [], prActivo: null, error: null };
+  const base = { repo, ramas: { origen, destino }, pendientes: 0, sinArchivos: 0, ultimo: null, commits: [], prActivo: null, error: null };
   try {
-    const [pendientes, activos] = await Promise.all([
+    const [adelante, activos] = await Promise.all([
       ado.contarPendientes(repo, origen, destino),
       ado.prsActivos(repo, origen, destino),
     ]);
+    // Commits sin archivos que cambien no se promocionan: el PR saldria vacio. Se cuentan
+    // aparte para que la pantalla diga por que el repo no ofrece PR teniendo commits.
+    const pendientes = adelante.conArchivos ? adelante.commits : 0;
+    const sinArchivos = adelante.conArchivos ? 0 : adelante.commits;
     const commits = pendientes > 0 ? await ado.commitsPendientes(repo, origen, destino, 50) : [];
     const masNuevo = [...activos].sort((a, b) => b.id - a.id)[0] || null;
     return {
-      ...base, pendientes, commits, ultimo: commits[0] || null,
+      ...base, pendientes, sinArchivos, commits, ultimo: commits[0] || null,
       prActivo: masNuevo ? { ...masNuevo, link: ado.urlDePr(repo, masNuevo.id) } : null,
     };
   } catch (e) {
@@ -57,7 +61,7 @@ export async function medirRepos(ado, par, { concurrencia = 4 } = {}) {
   // leer SI se lista, con su error: callarlo se leeria como "no aplica".
   const aplican = conRamas.filter((r) => r.error || r.ramas);
   const filas = await enLotes(aplican, concurrencia, (r) => (r.error
-    ? { repo: r.repo, ramas: null, pendientes: 0, ultimo: null, commits: [], prActivo: null, error: r.error }
+    ? { repo: r.repo, ramas: null, pendientes: 0, sinArchivos: 0, ultimo: null, commits: [], prActivo: null, error: r.error }
     : medirUnRepo(ado, { repo: r.repo, ramas: r.ramas, par })));
 
   return filas.sort((a, b) => rango(a) - rango(b) || b.pendientes - a.pendientes || a.repo.localeCompare(b.repo));

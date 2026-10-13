@@ -58,7 +58,7 @@ export function construirVista(reporte, extra = {}) {
       enRepo: (s.fuentes || []).includes('repo'),
       // El work item no es de este sprint: se trajo aparte porque el script lo nombra.
       wiFuera: !!wi?.fueraDelSprint,
-      // Base donde se ejecuta cuando NO es fidel_db (sale del prefijo "[xxx_db] - " del nombre).
+      // Base donde se ejecuta cuando NO es fidel_db (sale del prefijo "xxx_db - " del nombre, con o sin corchetes).
       base: s.base ?? null,
     };
   });
