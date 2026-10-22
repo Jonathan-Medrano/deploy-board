@@ -106,10 +106,24 @@ El código se desarrolla dentro del workspace `IA-JONA`, en `deploy-board/`. Par
 node deploy-board/scripts/publicar.mjs
 ```
 
-Copia los archivos (sin `.git`, `node_modules`, `estado` ni `.env`) al clon local de
-FidelWorkSpace, en `Tools/Paneles/deploy-board`. Por defecto lo busca en
-`~/Desktop/FidelWorkSpace`; otra ubicación va en la variable de entorno `DEPLOY_BOARD_PUBLICAR_EN`. Después: commit en una
-rama de FidelWorkSpace y PR a `main`. Cuando se mergea, cada uno lo recibe al abrir el panel.
+El sistema se distribuye por **dos canales, y los dos se mantienen al día**: cada dev usa el que
+tiene clonado.
+
+| Canal | Dónde | Cómo se actualiza |
+|---|---|---|
+| FidelWorkSpace | `Tools/Paneles/deploy-board` | restore de la carpeta desde `main` |
+| Espejo de GitHub | `github.com/Jonathan-Medrano/deploy-board` (el sistema es el repo entero) | `pull --ff-only` |
+
+El script copia los archivos trackeados (sin `.git`, `node_modules`, `estado`, `.env` ni
+`.actualizado`) a los dos clones locales. Se niega a publicar si el sistema tiene cambios sin
+commitear.
+
+- **FidelWorkSpace:** por defecto en `~/Desktop/FidelWorkSpace`; otra ubicación va en
+  `DEPLOY_BOARD_PUBLICAR_EN`. Después: commit en una rama y PR a `main`. Cuando se mergea, cada uno
+  lo recibe al abrir el panel.
+- **Espejo:** por defecto en `~/Desktop/deploy-board-espejo` (si no existe, lo clona; si existe,
+  hace `pull --ff-only` antes de copiar); otra ubicación va en `DEPLOY_BOARD_ESPEJO_EN`. Después:
+  commit en `main` y push **sin force**: un force rompe el `pull --ff-only` de cada clon del equipo.
 
 ## Cómo se corre
 
@@ -433,7 +447,7 @@ src/cli.js         arranque de la consola
 web/               la pantalla: HTML, CSS y JS de navegador, sin bundler
 iniciar.bat           arranca el sistema; no se modifica nunca (ver Como se actualiza)
 scripts/arrancar.bat  actualiza, levanta y reinicia; corre desde una copia en TEMP
-scripts/publicar.mjs  copia el sistema al clon de FidelWorkSpace para el PR
+scripts/publicar.mjs  copia el sistema a los clones de FidelWorkSpace y del espejo de GitHub
 scripts/abrir.ps1     levanta el tablero y abre el navegador
 ```
 

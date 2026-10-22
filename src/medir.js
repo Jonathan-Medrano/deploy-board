@@ -7,7 +7,7 @@ import { validarEscalera } from './desvios/escalera.js';
 import { construirReporte } from './reporte.js';
 import { rolesDesde } from './roles.js';
 import { unificarPersonas } from './identidades.js';
-import { medirStageToDev, sumarDelSprint } from './stageToDev.js';
+import { medirStageToDev, sumarDelSprint, RAMA_STAGE_POR_DEFECTO } from './stageToDev.js';
 import { ordenarParaEjecucion } from './reconciliador/index.js';
 import { marcarEnMain } from './enMain.js';
 import { estadoDelDeploy } from './deploy.js';
@@ -27,6 +27,7 @@ export function opcionesDelRepo(env = process.env) {
     repo: env.DEPLOY_BOARD_REPO_SCRIPTS || REPO_POR_DEFECTO,
     rama: env.DEPLOY_BOARD_RAMA_SCRIPTS || RAMA_POR_DEFECTO,
     ramaMain: env.DEPLOY_BOARD_RAMA_MAIN || RAMA_MAIN_POR_DEFECTO,
+    ramaStage: env.DEPLOY_BOARD_RAMA_STAGE || RAMA_STAGE_POR_DEFECTO,
   };
 }
 
@@ -68,6 +69,8 @@ export async function medirTodo(opciones = {}, deps = {}) {
   // "no se evaluo" (aviso, sprint sin elegir, o la lectura fallo) de "se evaluo y no encontro".
   let archivosDeMain = null;
   let ramaMainUsada = null;
+  let archivosDeStage = null;
+  let ramaStageUsada = null;
   if (!o.sprint) {
     avisos.push('No se comparo contra el repo: no hay carpeta del sprint elegida (ni en pantalla ni en DEPLOY_BOARD_SPRINT). Los desvios de script faltante o sobrante NO se pueden detectar.');
   } else {
@@ -93,6 +96,17 @@ export async function medirTodo(opciones = {}, deps = {}) {
       ramaMainUsada = delRepo.ramaMain;
     } catch (e) {
       avisos.push(`No pude leer la rama main de ${delRepo.repo} (${e.message}): 'Ya en rama MAIN' no se evaluo.`);
+    }
+
+    // Tercera lectura, la rama de stage (master en Api.Net). Un UPDATE o INSERT sin sonda da "?"
+    // en la base de stage: si su .sql ya llego a esa rama es de esta subida; si sigue solo en dev,
+    // todavia no promovio. Igual que main, que falle no tumba la medicion.
+    try {
+      paso(`Leyendo la rama ${delRepo.ramaStage}`);
+      archivosDeStage = await descubrir(ado, { sprint: o.sprint, repo: delRepo.repo, rama: delRepo.ramaStage });
+      ramaStageUsada = delRepo.ramaStage;
+    } catch (e) {
+      avisos.push(`No pude leer la rama ${delRepo.ramaStage} de ${delRepo.repo} (${e.message}): los scripts que no se pueden medir en stage cuentan para la subida sin confirmar.`);
     }
   }
 
@@ -141,6 +155,8 @@ export async function medirTodo(opciones = {}, deps = {}) {
     enMain, ramaMain: ramaMainUsada,
   });
   reporte.deploy = estadoDelDeploy(wis);
+  reporte.enRamaStage = archivosDeStage ? marcarEnMain(scripts, archivosDeStage) : {};
+  reporte.ramaStage = ramaStageUsada;
   // Donde se commitea un script del sprint: el link de "Commitear el script al repo".
   reporte.repoScripts = o.sprint ? { repo: delRepo.repo, rama: delRepo.rama, carpeta: `${CARPETA_POR_DEFECTO}/${o.sprint}` } : null;
 

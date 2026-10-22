@@ -27,6 +27,7 @@ export function aWorkItem(w) {
     cantidadScripts: f['Custom.CantidadScripts'] ?? null,
     tieneSP: f['Custom.TieneSP'] ?? null,
     tieneReporte: f['Custom.TieneReporte'] ?? null,
+    fechaSubida: f['Custom.FechaSubida'] ?? null,
     asignadoA: (f['System.AssignedTo'] || {}).displayName || null,
     asignadoAEmail: (f['System.AssignedTo'] || {}).uniqueName || null,
   };

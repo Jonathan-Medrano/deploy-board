@@ -1,15 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { medirTodo, opcionesDelRepo, RAMA_MAIN_POR_DEFECTO } from '../src/medir.js';
+import { RAMA_STAGE_POR_DEFECTO } from '../src/stageToDev.js';
 import { REPO_POR_DEFECTO, RAMA_POR_DEFECTO } from '../src/fuentes/repoAdo.js';
 
 test('sin configurar, el lado repo sale del Api.Net de Azure', () => {
-  assert.deepEqual(opcionesDelRepo({}), { repo: REPO_POR_DEFECTO, rama: RAMA_POR_DEFECTO, ramaMain: RAMA_MAIN_POR_DEFECTO });
+  assert.deepEqual(opcionesDelRepo({}), { repo: REPO_POR_DEFECTO, rama: RAMA_POR_DEFECTO, ramaMain: RAMA_MAIN_POR_DEFECTO, ramaStage: RAMA_STAGE_POR_DEFECTO });
 });
 
 test('el repo y la rama se pueden cambiar sin tocar codigo', () => {
   const o = opcionesDelRepo({ DEPLOY_BOARD_REPO_SCRIPTS: 'Otro', DEPLOY_BOARD_RAMA_SCRIPTS: 'stage' });
-  assert.deepEqual(o, { repo: 'Otro', rama: 'stage', ramaMain: RAMA_MAIN_POR_DEFECTO });
+  assert.deepEqual(o, { repo: 'Otro', rama: 'stage', ramaMain: RAMA_MAIN_POR_DEFECTO, ramaStage: RAMA_STAGE_POR_DEFECTO });
 });
 
 test('la rama main tambien se puede cambiar sin tocar codigo', () => {
@@ -63,7 +64,7 @@ test('el sprint y la rama viajan a quien lee el repo, no se adivinan adentro', a
   let recibido = null;
   await medirTodo(
     { sprint: 'Sprint_Z', ambientes: [] },
-    deps({ env: { DEPLOY_BOARD_RAMA_SCRIPTS: 'main' }, descubrirRepo: async (ado, o) => { recibido = o; return []; } })
+    deps({ env: { DEPLOY_BOARD_RAMA_SCRIPTS: 'main' }, descubrirRepo: async (ado, o) => { recibido ??= o; return []; } })
   );
   assert.equal(recibido.sprint, 'Sprint_Z');
   assert.equal(recibido.rama, 'main');
@@ -165,6 +166,41 @@ test('si falla la lectura de main, hay un aviso puntual y la medicion sigue', as
   assert.ok(avisos.some((a) => /rama main/.test(a) && /502 Bad Gateway/.test(a) && /no se evaluo/.test(a)), JSON.stringify(avisos));
   assert.deepEqual(reporte.enMain, {});
   assert.equal(reporte.ramaMain, null);
+});
+
+// ---------------- 'Ya en la rama de stage' ----------------
+
+test('con sprint elegido, reporte.enRamaStage compara contra master igual que main', async () => {
+  const porRama = {
+    dev: [
+      { archivo: '[U-1] - Algo - UPDATE.sql', wiId: 1, esPre: false, orden: null, accion: 'UPDATE', descripcion: 'Algo', wiTipo: 'U',
+        vinculadoPor: 'nombre', id: '1/algo/update', objetos: [], sql: '', fuente: 'repo', carpeta: 'US-1', responsables: {}, sondas: [], hash: 'h1' },
+      { archivo: '[U-2] - Otro - UPDATE.sql', wiId: 2, esPre: false, orden: null, accion: 'UPDATE', descripcion: 'Otro', wiTipo: 'U',
+        vinculadoPor: 'nombre', id: '2/otro/update', objetos: [], sql: '', fuente: 'repo', carpeta: 'US-2', responsables: {}, sondas: [], hash: 'h2' },
+    ],
+    [RAMA_STAGE_POR_DEFECTO]: [{ archivo: '[U-1] - Algo - UPDATE.sql', hash: 'h1' }],
+  };
+  const { reporte } = await medirTodo(
+    { sprint: 'S', ambientes: [] },
+    deps({ descubrirRepo: async (ado, o) => porRama[o.rama] || [] })
+  );
+  assert.deepEqual(reporte.enRamaStage, { '1/algo/update': 'igual' });
+  assert.equal(reporte.ramaStage, RAMA_STAGE_POR_DEFECTO);
+});
+
+test('si falla la lectura de la rama de stage, hay un aviso y enRamaStage queda vacio con ramaStage null', async () => {
+  const { reporte, avisos } = await medirTodo(
+    { sprint: 'S', ambientes: [] },
+    deps({
+      descubrirRepo: async (ado, o) => {
+        if (o.rama === RAMA_STAGE_POR_DEFECTO) throw new Error('502 Bad Gateway');
+        return [];
+      },
+    })
+  );
+  assert.ok(avisos.some((a) => a.includes(RAMA_STAGE_POR_DEFECTO) && /502 Bad Gateway/.test(a)), JSON.stringify(avisos));
+  assert.deepEqual(reporte.enRamaStage, {});
+  assert.equal(reporte.ramaStage, null);
 });
 
 // ---------------- work items fuera del sprint ----------------

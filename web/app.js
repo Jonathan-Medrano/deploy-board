@@ -57,7 +57,26 @@
     if (estado.ola === 'stage') return false;        // sube lo que hay: nada lo bloquea
     return !enStage(f);                                // dev->stage->main: si no llego a stage, no llega a main
   }
-  function quedaAfuera(f){ return estado.ola === 'stage' && !fueraDeLaSubida(f) && !enStage(f) && !yaSubido(f) && !ignorado(f); }
+  /* Un "?" en stage es "no se sabe", no "no llego": un UPDATE o INSERT sin fila sondeable nunca
+     da OK. Si contara como afuera, todo script de datos quedaria siempre fuera de la subida. Y lo
+     que ya esta en main es de esta subida aunque stage no lo confirme. */
+  function sinMedirEnStage(f){ return f.est[D.meta.destino] === '?'; }
+  /* Con la rama de stage leida, un "?" se decide por el repo: si el .sql ya llego a master es de
+     esta subida; si sigue solo en dev, todavia no promovio. Sin ese dato (medicion vieja o la
+     lectura fallo) el "?" cuenta, como antes. */
+  function ramaStageLeida(){ return !!D.meta.ramaStage; }
+  function enRamaStage(f){ return f.stageRepo === 'igual'; }
+  function vaEnLaSubida(f){
+    return enStage(f) || f.main === 'igual' || (sinMedirEnStage(f) && (!ramaStageLeida() || enRamaStage(f)));
+  }
+  function quedaAfuera(f){ return estado.ola === 'stage' && !fueraDeLaSubida(f) && !vaEnLaSubida(f) && !yaSubido(f) && !ignorado(f); }
+  function notaDeMedicion(f){
+    if (estado.ola !== 'stage' || enStage(f) || yaSubido(f) || ignorado(f) || fueraDeLaSubida(f)) return null;
+    if (sinMedirEnStage(f) && ramaStageLeida() && !enRamaStage(f) && f.main !== 'igual') return { txt:'Todavía es de dev: el .sql no llegó a ' + D.meta.ramaStage, cls:'' };
+    if (sinMedirEnStage(f) && !f.base) return { txt:'No se puede medir en ' + D.meta.destino + (enRamaStage(f) ? ': ya está en ' + D.meta.ramaStage + ', confirmá a mano que corrió' : ': confirmá a mano que corrió'), cls:'aviso' };
+    if (!sinMedirEnStage(f) && f.main === 'igual') return { txt:'Ya está en main pero no figura en ' + D.meta.destino, cls:'aviso' };
+    return null;
+  }
   function oculto(f){
     return estado.estadosOcultos.indexOf(f.wiEstado || '(sin estado)') >= 0
         || estado.tiposOcultos.indexOf(f.tipo || 'otro') >= 0;
@@ -138,7 +157,7 @@
     var v = document.getElementById('veredicto');
     var num, tit, sub, ok;
     if (estado.ola === 'stage') {
-      var vanAhora = todas.filter(function(f){ return !fueraDeLaSubida(f) && enStage(f) && !yaSubido(f); }).length;
+      var vanAhora = todas.filter(function(f){ return !fueraDeLaSubida(f) && vaEnLaSubida(f) && !yaSubido(f); }).length;
       num = vanAhora; ok = vanAhora === 0;
       tit = vanAhora === 0 ? 'Todo lo de stage ya está marcado' : vanAhora + (vanAhora === 1 ? ' script va en esta subida' : ' scripts van en esta subida');
       sub = afuera ? afuera + (afuera === 1 ? ' queda afuera: todavía no llegó a stage' : ' quedan afuera: todavía no llegaron a stage')
@@ -292,6 +311,7 @@
   }
 
   function filaHTML(f, numero, nota){
+    if (!nota) nota = notaDeMedicion(f);
     var m = f.marca;
     var fueraSprint = f.wiFuera
       ? '<em class="fuera-sprint" title="El work item no está en este sprint: se trajo aparte porque el script lo nombra.">fuera del sprint</em>'

@@ -51,6 +51,8 @@ export function construirVista(reporte, extra = {}) {
       // 'igual' | 'distinta' | null. Null no es "no llego a main": puede ser que no se haya
       // evaluado (sin sprint elegido, o la lectura de main fallo) — eso lo dice meta.ramaMain.
       main: reporte.enMain?.[s.id] ?? null,
+      // Lo mismo contra la rama de stage (master). Null tambien puede ser "no se evaluo": lo dice meta.ramaStage.
+      stageRepo: reporte.enRamaStage?.[s.id] ?? null,
       // 'cerrado' | 'pausado' | null: los dos primeros no van en la subida y la pantalla los
       // aparta. Sale de la misma regla que apaga D2/D3/D4, para que no se contradigan.
       subida: subidaDe(wi),
@@ -86,6 +88,8 @@ export function construirVista(reporte, extra = {}) {
       // Rama que se leyo para "Ya en rama MAIN", o null si no se evaluo. La pantalla la usa
       // para explicar por que una fila no tiene badge en vez de dejarlo mudo.
       ramaMain: reporte.ramaMain ?? null,
+      // Rama de stage que se leyo, o null si no se evaluo o la medicion es anterior a este dato.
+      ramaStage: reporte.ramaStage ?? null,
       // Si el deploy del sprint ya se ejecuto (tarjeta "Scripts" cerrada). null = medicion
       // anterior a este dato: la pantalla sigue tomando "en main" como ejecutado.
       deploy: reporte.deploy ?? null,

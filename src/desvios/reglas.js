@@ -19,11 +19,13 @@ export function problemasDeNombre(s) {
   return p;
 }
 
-// Un work item cerrado o pausado no forma parte de la subida. Cerrado (Closed o Done): se asume
-// que ya esta en main. Pausado: no se ejecuta. Se clasifica por el estado, sin mayusculas.
+// Un work item cerrado o pausado no forma parte de la subida. Cerrado (Closed o Done) CON fecha
+// de subida (Custom.FechaSubida): ya subio, se asume en main. Cerrado SIN fecha de subida: lo
+// pasaron a Closed sin querer y sigue siendo de la subida de este sprint — regla del equipo,
+// 2026-10-20. Pausado: no se ejecuta. Se clasifica por el estado, sin mayusculas.
 export function subidaDe(wi) {
   const e = String((wi && wi.estado) || '').trim().toLowerCase();
-  if (e === 'closed' || e === 'done') return 'cerrado';
+  if (e === 'closed' || e === 'done') return wi.fechaSubida ? 'cerrado' : null;
   if (e === 'paused') return 'pausado';
   return null;
 }

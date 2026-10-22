@@ -128,6 +128,16 @@ test('sin enMain en el reporte, row.main es null para todas las filas (compatibi
   assert.equal(v.filas[1].main, null);
 });
 
+test('row.stageRepo proyecta enRamaStage y meta.ramaStage la rama leida; null sin el dato', () => {
+  const v = construirVista({ ...reporteBase, enRamaStage: { a: 'igual' }, ramaStage: 'master' });
+  assert.equal(v.filas[0].stageRepo, 'igual');
+  assert.equal(v.filas[1].stageRepo, null);
+  assert.equal(v.meta.ramaStage, 'master');
+  const vieja = construirVista(reporteBase);
+  assert.equal(vieja.filas[0].stageRepo, null);
+  assert.equal(vieja.meta.ramaStage, null);
+});
+
 test('meta.ramaMain copia la rama que uso el reporte, o null cuando no se evaluo', () => {
   assert.equal(construirVista({ ...reporteBase, ramaMain: 'main' }).meta.ramaMain, 'main');
   assert.equal(construirVista(reporteBase).meta.ramaMain, null);
@@ -141,12 +151,14 @@ test('cada fila proyecta subida (cerrado/pausado/null), enRepo y wiFuera', () =>
       script({ id: 'p', wiId: 21, fuentes: ['adjunto', 'repo'] }),
       script({ id: 'd', wiId: 22, fuentes: ['repo'] }),
       script({ id: 'n', wiId: 23 }),
+      script({ id: 's', wiId: 24 }),
     ],
     wis: [
-      { id: 20, estado: 'Closed', fueraDelSprint: true },
+      { id: 20, estado: 'Closed', fueraDelSprint: true, fechaSubida: '2026-10-20T12:00:00Z' },
       { id: 21, estado: 'Paused' },
-      { id: 22, estado: 'Done' },
+      { id: 22, estado: 'Done', fechaSubida: '2026-10-20T12:00:00Z' },
       { id: 23, estado: 'Active' },
+      { id: 24, estado: 'Closed', fechaSubida: null },
     ],
   });
   const f = Object.fromEntries(v.filas.map((x) => [x.id, x]));
@@ -154,6 +166,7 @@ test('cada fila proyecta subida (cerrado/pausado/null), enRepo y wiFuera', () =>
   assert.equal(f.p.subida, 'pausado');
   assert.equal(f.d.subida, 'cerrado');
   assert.equal(f.n.subida, null);
+  assert.equal(f.s.subida, null);
   assert.equal(f.c.enRepo, false);
   assert.equal(f.p.enRepo, true);
   assert.equal(f.d.enRepo, true);

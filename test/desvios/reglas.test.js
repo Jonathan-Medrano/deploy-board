@@ -453,11 +453,23 @@ for (const estadoWi of ['Closed', 'Done', 'closed', 'Paused']) {
   test(`un script de un work item en "${estadoWi}" no dispara D2, D3 ni D4`, () => {
     const ds = detectarDesvios({
       scripts: [sc({ esPre: true })],
-      wis: [{ id: 1, estado: estadoWi, asignadoA: 'Ana' }],
+      wis: [{ id: 1, estado: estadoWi, asignadoA: 'Ana', fechaSubida: '2026-10-20T12:00:00Z' }],
       estados: estadosCorrioEnDev, ambientes: ['dev', 'stage'],
     });
     const codigos = ds.map((d) => d.codigo);
     for (const c of ['D2', 'D3', 'D4']) assert.equal(codigos.includes(c), false, `${estadoWi}: ${codigos.join(',')}`);
+  });
+}
+
+for (const estadoWi of ['Closed', 'Done']) {
+  test(`un "${estadoWi}" SIN fecha de subida se cerro sin querer: sigue en la subida y dispara D2/D3/D4`, () => {
+    const ds = detectarDesvios({
+      scripts: [sc({ esPre: true })],
+      wis: [{ id: 1, estado: estadoWi, asignadoA: 'Ana', fechaSubida: null }],
+      estados: estadosCorrioEnDev, ambientes: ['dev', 'stage'],
+    });
+    const codigos = ds.map((d) => d.codigo);
+    assert.equal(['D2', 'D3', 'D4'].some((c) => codigos.includes(c)), true, `${estadoWi}: ${codigos.join(',')}`);
   });
 }
 
@@ -520,7 +532,7 @@ for (const [estadoWi, estadoTask] of [['Closed', 'Active'], ['Done', 'Active'], 
   test(`D1 para un WI en "${estadoWi}" baja a medio: no va en la subida`, () => {
     const ds = detectarDesvios({
       scripts: [sc({ id: 'a', wiId: 1 })],
-      wis: [{ id: 1, estado: estadoWi }],
+      wis: [{ id: 1, estado: estadoWi, fechaSubida: '2026-10-20T12:00:00Z' }],
       tasks: [{ id: 9, estado: estadoTask, adjuntos: ['a'] }],
       estados: {},
     });

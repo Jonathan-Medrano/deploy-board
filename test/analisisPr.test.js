@@ -95,7 +95,7 @@ test('ni los cerrados o pausados ni lo que ya esta en main se reclaman al PR', (
   const cerrado = delPanel('c.sql', { wiId: 1 });
   const pausado = delPanel('p.sql', { wiId: 2 });
   const enMain = delPanel('m.sql');
-  const wis = [...WIS, { id: 1, estado: 'Closed' }, { id: 2, estado: 'Paused' }];
+  const wis = [...WIS, { id: 1, estado: 'Closed', fechaSubida: '2026-10-20T12:00:00Z' }, { id: 2, estado: 'Paused' }];
   const r = comparar({ scriptsPr: [], scriptsPanel: [cerrado, pausado, enMain], wis, enMain: { [enMain.id]: 'igual' }, sprint: SPRINT });
   assert.deepEqual(r, []);
 });
